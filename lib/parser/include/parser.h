@@ -58,17 +58,17 @@ private:
 
 class DecimalInt : public Node {
 public:
-    DecimalInt(TokenIter ident_iter)
+    DecimalInt(TokenIter token_iter)
     : Node("DecimalInt", nullptr, {}),
-      ident_iter_(ident_iter)
+      token_iter_(token_iter)
     {}
 
     void print_node() override {
-        std::cout << ident_iter_->lexeme << "\n";
+        std::cout << token_iter__iter_->lexeme << "\n";
     }
 
 private:
-    TokenIter ident_iter_;
+    TokenIter token_iter_;
 };
 
 //----------------Program----------------
@@ -202,16 +202,14 @@ private:
         auto line_end_iter = token_iter;
 
         while (line_start_iter != token_list_.begin() &&
-               std::prev(line_start_iter)->line == token_iter->line)
-        {
+               std::prev(line_start_iter)->line == token_iter->line) 
+
             --line_start_iter;
-        }
 
         while (std::next(line_end_iter) != token_list_.end() &&
                std::next(line_end_iter)->line == token_iter->line)
-        {
+
             ++line_end_iter;
-        }
 
         std::cout << "Error "
                   << token_iter->line
@@ -358,7 +356,7 @@ private:
         );
 
         function_node->add_child(
-            std::make_unique<ParameterList>(nullptr, param_list_iter)
+        parse_parameters_list(param_list_iter);
         );
 
         function_node->add_child(
@@ -367,4 +365,57 @@ private:
 
         return function_node;
     }
+
+    std::unique_ptr<ParameterList> parse_parameters_list(
+        std::tuple<TokenIter, TokenIter> param_list
+    ) {
+        auto parameter_list = std::make_unique<ParameterList>(nullptr, param_list);
+
+        auto token_iter = std::get<0>(param_list) + 1;
+        auto end_iter = std::get<1>(param_list);
+
+        while (token_iter < end_iter) {
+            if ((token_iter + 1) < end_iter &&
+                token_iter->type == Lexer::TokenType::TOKEN_INT &&
+                (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
+            {
+                parameter_list->add_child(
+                    std::make_unique<IntIdent>(token_iter + 1)
+                );
+
+                token_iter += 2;
+            }
+            else if (token_iter->type == Lexer::TokenType::TOKEN_DECIMAL_INT) {
+                parameter_list->add_child(
+                    std::make_unique<DecimalInt>(token_iter)
+                );
+
+                ++token_iter;
+            }
+            else {
+                print_error(token_iter, "Invalid parameter.");
+                throw std::runtime_error("Invalid parameter");
+            }
+
+            if (token_iter == end_iter) {
+                break;
+            }
+
+            if (token_iter->type != Lexer::TokenType::TOKEN_COMMA) {
+                print_error(token_iter, "Expected ',' between parameters.");
+                throw std::runtime_error("Expected comma between parameters");
+            }
+
+            ++token_iter;
+
+            if (token_iter == end_iter) {
+                print_error(std::prev(token_iter), "Expected parameter after ','.");
+                throw std::runtime_error("Expected parameter after comma");
+            }
+        }
+
+        return parameter_list;
+    }
+
+
 };
