@@ -41,35 +41,7 @@ public:
 };
 
 //----------------Types----------------
-class IntIdent : public Node {
-public:
-    IntIdent(TokenIter ident_iter)
-    : Node("IntIdent", nullptr, {}),
-      ident_iter_(ident_iter)
-    {}
 
-    void print_node() override {
-        std::cout << ident_iter_->lexeme << "\n";
-    }
-
-private:
-    TokenIter ident_iter_;
-};
-
-class DecimalInt : public Node {
-public:
-    DecimalInt(TokenIter token_iter)
-    : Node("DecimalInt", nullptr, {}),
-      token_iter_(token_iter)
-    {}
-
-    void print_node() override {
-        std::cout << token_iter__iter_->lexeme << "\n";
-    }
-
-private:
-    TokenIter token_iter_;
-};
 
 //----------------Program----------------
 class Program : public Node {
@@ -146,27 +118,137 @@ private:
 };
 
 //----------------Statements----------------
-// Left unimplemented intentionally.
 class Statement : public Node {
 public:
     Statement(std::string node_name, Node* parent = nullptr)
     : Node(std::move(node_name), parent, {})
     {}
 
-    // Still abstract because print_node() is not implemented here.
 };
 
 //----------------Expressions----------------
-// Left unimplemented intentionally.
 class Expression : public Node {
 public:
     Expression(std::string node_name, Node* parent = nullptr)
     : Node(std::move(node_name), parent, {})
     {}
 
-    // Still abstract because print_node() is not implemented here.
 };
 
+class IdentifierExpr : public Node {
+public:
+    IdentifierExpr(TokenIter ident_iter)
+    : Node("IdentifierExpr", nullptr, {}), ident_iter_(ident_iter)
+    {}
+
+    void print_node() override {std::cout << ident_iter_->lexeme;}
+    void add_shild() {
+
+    }
+
+private:
+    TokenIter ident_iter_;
+
+};
+
+class IntegerExpr : public Node {
+public:
+    IntegerExpr(TokenIter token_iter)
+    : Node("IntegerExpr", nullptr, {}),
+      token_iter_(token_iter)
+    {}
+
+    void print_node() override {
+        std::cout << token_iter_->lexeme << "\n";
+    }
+
+private:
+    TokenIter token_iter_;
+};
+
+class PostfixExpr : public Node {
+public:
+    PostfixExpr(std::tuple<TokenIter, TokenIter> postfix_expr_iter)
+    : Node("PostfixExpr", nullptr, {}),
+      postfix_iter_iter_(postfix_expr_iter)
+    {}
+
+    void print_node() override {
+        std::cout << "PostfixOp" << std::get<1>(postfix_iter_iter_)->lexeme << "\n";
+    }
+
+private:
+    std::tuple<TokenIter, TokenIter> postfix_iter_iter_;
+};
+
+
+class FuncCallExpr : public Node {
+public:
+    FuncCallExpr(
+        TokenIter func_ident_iter,
+        std::tuple<TokenIter, TokenIter> argument_list_iter
+    ) : Node("FunctionCall", nullptr, {}),
+        func_ident_iter_(func_ident_iter),
+        argument_list_iter_(argument_list_iter)
+    {}
+
+    void print_node() override {
+        std::cout << "FunctionCall " << func_ident_iter_->lexeme << "\n";
+    }
+
+private:
+    TokenIter func_ident_iter_;
+    std::tuple<TokenIter, TokenIter> argument_list_iter_;
+};
+
+class ArgumentListExpr : public Node {
+public:
+    ArgumentListExpr()
+    : Node("ArgumentList", nullptr, {})
+    {}
+
+    void print_node() override {
+        std::cout << node_name << "\n";
+    }
+};
+
+class BinaryOperExpr : public Node {
+public:
+    BinaryOperExpr(
+        std::string node_name,
+        TokenIter mul_op_iter,
+        std::tuple<TokenIter, TokenIter> left_expr,
+        std::tuple<TokenIter, TokenIter> right_expr
+    ) : Node(node_name, nullptr, {}),
+        mul_op_iter_(mul_op_iter),
+        left_expr_(left_expr),
+        right_expr_(right_expr)
+    {}
+
+    void print_node() override {
+        std::cout << node_name << " " << mul_op_iter_->lexeme << "\n";
+    }
+
+private:
+    TokenIter mul_op_iter_;
+    std::tuple<TokenIter, TokenIter> left_expr_;
+    std::tuple<TokenIter, TokenIter> right_expr_;
+};
+
+class AssignmentExpr : public Node {
+public:
+    AssignmentExpr(TokenIter assign_iter)
+    : Node("AssignmentExpr", nullptr, {}),
+      assign_iter_(assign_iter)
+    {}
+
+    void print_node() override {
+        std::cout << "AssignmentExpr " << assign_iter_->lexeme << "\n";
+    }
+
+private:
+    TokenIter assign_iter_;
+};
 //----------------Parser----------------
 class Parser {
 public:
@@ -356,7 +438,7 @@ private:
         );
 
         function_node->add_child(
-        parse_parameters_list(param_list_iter);
+        parse_parameters_list(param_list_iter)
         );
 
         function_node->add_child(
@@ -375,19 +457,16 @@ private:
         auto end_iter = std::get<1>(param_list);
 
         while (token_iter < end_iter) {
-            if ((token_iter + 1) < end_iter &&
-                token_iter->type == Lexer::TokenType::TOKEN_INT &&
-                (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
-            {
+            if ((token_iter + 1) < end_iter && token_iter->type == Lexer::TokenType::TOKEN_INT && (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT) {
                 parameter_list->add_child(
-                    std::make_unique<IntIdent>(token_iter + 1)
+                    std::make_unique<IntegerExpr>(token_iter + 1)
                 );
 
                 token_iter += 2;
             }
             else if (token_iter->type == Lexer::TokenType::TOKEN_DECIMAL_INT) {
                 parameter_list->add_child(
-                    std::make_unique<DecimalInt>(token_iter)
+                    std::make_unique<IntegerExpr>(token_iter)
                 );
 
                 ++token_iter;
@@ -417,5 +496,380 @@ private:
         return parameter_list;
     }
 
+    // EXPRASSIONS
+    using ExprRange = std::tuple<TokenIter, TokenIter>;
 
+    bool is_postfix_operator(TokenIter iter) {
+        return iter->type == Lexer::TokenType::TOKEN_INC ||
+            iter->type == Lexer::TokenType::TOKEN_DEC;
+    }
+    
+    std::unique_ptr<Node> parse_primary_expr(TokenIter primary_iter) {
+        if (primary_iter->type == Lexer::TokenType::TOKEN_IDENT) {
+            return std::make_unique<IdentifierExpr>(primary_iter);
+        }
+
+        if (primary_iter->type == Lexer::TokenType::TOKEN_DECIMAL_INT) {
+            return std::make_unique<IntegerExpr>(primary_iter);
+        }
+
+        print_error(primary_iter, "Expected primary expression.");
+        throw std::runtime_error("Expected primary expression");
+    }
+
+    std::unique_ptr<Node> parse_primary_expr(ExprRange expr) {
+        auto begin = std::get<0>(expr);
+        auto end   = std::get<1>(expr);
+
+        if (begin > end) {
+            print_error(begin, "Expected primary expression.");
+            throw std::runtime_error("Expected primary expression");
+        }
+
+        if (begin == end) {
+            return parse_primary_expr(begin);
+        }
+
+        if (begin->type == Lexer::TokenType::TOKEN_L_PARENTH &&
+            end->type == Lexer::TokenType::TOKEN_R_PARENTH)
+        {
+            return parse_expr(std::make_tuple(begin + 1, end - 1));
+        }
+
+        print_error(begin, "Invalid primary expression.");
+        throw std::runtime_error("Invalid primary expression");
+    }
+
+    std::unique_ptr<ArgumentListExpr> parse_argument_list(ExprRange args) {
+        auto arg_list = std::make_unique<ArgumentListExpr>();
+
+        auto begin = std::get<0>(args);
+        auto end   = std::get<1>(args);
+
+        if (begin > end) {
+            return arg_list;
+        }
+
+        int paren_depth = 0;
+        auto arg_begin = begin;
+
+        for (auto iter = begin; iter <= end; ++iter) {
+            if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+                ++paren_depth;
+            }
+            else if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+                --paren_depth;
+            }
+
+            if (paren_depth == 0 &&
+                iter->type == Lexer::TokenType::TOKEN_COMMA)
+            {
+                if (arg_begin > iter - 1) {
+                    print_error(iter, "Expected argument before comma.");
+                    throw std::runtime_error("Expected argument before comma");
+                }
+
+                arg_list->add_child(
+                    parse_expr(std::make_tuple(arg_begin, iter - 1))
+                );
+
+                arg_begin = iter + 1;
+            }
+        }
+
+        if (arg_begin <= end) {
+            arg_list->add_child(
+                parse_expr(std::make_tuple(arg_begin, end))
+            );
+        }
+
+        return arg_list;
+    }
+
+    std::unique_ptr<Node> parse_postfix_expr(ExprRange expr) {
+        auto begin = std::get<0>(expr);
+        auto end   = std::get<1>(expr);
+
+        if (begin > end) {
+            print_error(begin, "Expected postfix expression.");
+            throw std::runtime_error("Expected postfix expression");
+        }
+
+        // x++ / x--
+        if (begin < end && is_postfix_operator(end)) {
+            auto postfix_node = std::make_unique<PostfixExpr>(
+                std::make_tuple(begin, end)
+            );
+
+            postfix_node->add_child(
+                parse_postfix_expr(std::make_tuple(begin, end - 1))
+            );
+
+            return postfix_node;
+        }
+
+        // foo() / foo(a, b)
+        if (begin->type == Lexer::TokenType::TOKEN_IDENT &&
+            begin + 1 <= end &&
+            (begin + 1)->type == Lexer::TokenType::TOKEN_L_PARENTH &&
+            end->type == Lexer::TokenType::TOKEN_R_PARENTH)
+        {
+            auto call_node = std::make_unique<FuncCallExpr>(
+                begin,
+                std::make_tuple(begin + 1, end)
+            );
+
+            call_node->add_child(
+                parse_argument_list(std::make_tuple(begin + 2, end - 1))
+            );
+
+            return call_node;
+        }
+
+        return parse_primary_expr(expr);
+    }
+
+    TokenIter find_binary_operator(
+        ExprRange expr,
+        const std::vector<Lexer::TokenType>& operators
+    ) {
+        auto begin = std::get<0>(expr);
+        auto end   = std::get<1>(expr);
+
+        int paren_depth = 0;
+
+        for (auto iter = end;; --iter) {
+            if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+                ++paren_depth;
+            }
+            else if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+                --paren_depth;
+            }
+
+            if (paren_depth == 0) {
+                for (auto op : operators) {
+                    if (iter->type == op) {
+                        return iter;
+                    }
+                }
+            }
+
+            if (iter == begin) {
+                break;
+            }
+        }
+
+        return token_list_.end();
+    }
+
+    std::unique_ptr<Node> parse_mul_expr(ExprRange expr) {
+        auto op_iter = find_binary_operator(
+            expr,
+            {
+                Lexer::TokenType::TOKEN_MUL,
+                Lexer::TokenType::TOKEN_DIV,
+                Lexer::TokenType::TOKEN_PERCENT
+            }
+        );
+
+        if (op_iter == token_list_.end()) {
+            return parse_postfix_expr(expr);
+        }
+
+        auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
+        auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
+
+        auto node = std::make_unique<BinaryOperExpr>(
+            "MultiplicativeExpr",
+            op_iter,
+            left_expr,
+            right_expr
+        );
+
+        node->add_child(parse_mul_expr(left_expr));
+        node->add_child(parse_postfix_expr(right_expr));
+
+        return node;
+    }
+
+    std::unique_ptr<Node> parse_add_expr(ExprRange expr) {
+        auto op_iter = find_binary_operator(
+            expr,
+            {
+                Lexer::TokenType::TOKEN_ADD,
+                Lexer::TokenType::TOKEN_SUB
+            }
+        );
+
+        if (op_iter == token_list_.end()) {
+            return parse_mul_expr(expr);
+        }
+
+        auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
+        auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
+
+        auto node = std::make_unique<BinaryOperExpr>(
+            "AdditiveExpr",
+            op_iter,
+            left_expr,
+            right_expr
+        );
+
+        node->add_child(parse_add_expr(left_expr));
+        node->add_child(parse_mul_expr(right_expr));
+
+        return node;
+    }
+
+    std::unique_ptr<Node> parse_rel_expr(ExprRange expr) {
+        auto op_iter = find_binary_operator(
+            expr,
+            {
+                Lexer::TokenType::TOKEN_GREATER,
+                Lexer::TokenType::TOKEN_GREATER_OR_EQ,
+                Lexer::TokenType::TOKEN_LESS,
+                Lexer::TokenType::TOKEN_LESS_OR_EQ
+            }
+        );
+
+        if (op_iter == token_list_.end()) {
+            return parse_add_expr(expr);
+        }
+
+        auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
+        auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
+
+        auto node = std::make_unique<BinaryOperExpr>(
+            "RelationalExpr",
+            op_iter,
+            left_expr,
+            right_expr
+        );
+
+        node->add_child(parse_rel_expr(left_expr));
+        node->add_child(parse_add_expr(right_expr));
+
+        return node;
+    }
+
+    std::unique_ptr<Node> parse_equality_expr(ExprRange expr) {
+        auto op_iter = find_binary_operator(
+            expr,
+            {
+                Lexer::TokenType::TOKEN_EQUAL,
+                Lexer::TokenType::TOKEN_NEQUAL
+            }
+        );
+
+        if (op_iter == token_list_.end()) {
+            return parse_rel_expr(expr);
+        }
+
+        auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
+        auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
+
+        auto node = std::make_unique<BinaryOperExpr>(
+            "EqualityExpr",
+            op_iter,
+            left_expr,
+            right_expr
+        );
+
+        node->add_child(parse_equality_expr(left_expr));
+        node->add_child(parse_rel_expr(right_expr));
+
+        return node;
+    }
+
+    std::unique_ptr<Node> parse_logical_and_expr(ExprRange expr) {
+        auto op_iter = find_binary_operator(
+            expr,
+            {
+                Lexer::TokenType::TOKEN_LOGICAL_AND
+            }
+        );
+
+        if (op_iter == token_list_.end()) {
+            return parse_equality_expr(expr);
+        }
+
+        auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
+        auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
+
+        auto node = std::make_unique<BinaryOperExpr>(
+            "LogicalAndExpr",
+            op_iter,
+            left_expr,
+            right_expr
+        );
+
+        node->add_child(parse_logical_and_expr(left_expr));
+        node->add_child(parse_equality_expr(right_expr));
+
+        return node;
+    }
+
+    std::unique_ptr<Node> parse_logical_or_expr(ExprRange expr) {
+        auto op_iter = find_binary_operator(
+            expr,
+            {
+                Lexer::TokenType::TOKEN_LOGICAL_OR
+            }
+        );
+
+        if (op_iter == token_list_.end()) {
+            return parse_logical_and_expr(expr);
+        }
+
+        auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
+        auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
+
+        auto node = std::make_unique<BinaryOperExpr>(
+            "LogicalOrExpr",
+            op_iter,
+            left_expr,
+            right_expr
+        );
+
+        node->add_child(parse_logical_or_expr(left_expr));
+        node->add_child(parse_logical_and_expr(right_expr));
+
+        return node;
+    }
+
+    std::unique_ptr<Node> parse_assignment_expr(ExprRange expr) {
+        auto begin = std::get<0>(expr);
+        auto end   = std::get<1>(expr);
+
+        int paren_depth = 0;
+
+        for (auto iter = begin; iter <= end; ++iter) {
+            if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+                ++paren_depth;
+            }
+            else if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+                --paren_depth;
+            }
+
+            if (paren_depth == 0 &&
+                iter->type == Lexer::TokenType::TOKEN_ASSIGN)
+            {
+                auto left_expr  = std::make_tuple(begin, iter - 1);
+                auto right_expr = std::make_tuple(iter + 1, end);
+
+                auto node = std::make_unique<AssignmentExpr>(iter);
+
+                node->add_child(parse_postfix_expr(left_expr));
+                node->add_child(parse_assignment_expr(right_expr));
+
+                return node;
+            }
+        }
+
+        return parse_logical_or_expr(expr);
+    }
+
+    std::unique_ptr<Node> parse_expr(ExprRange expr) {
+        return parse_assignment_expr(expr);
+    }
 };
