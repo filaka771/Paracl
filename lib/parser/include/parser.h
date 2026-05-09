@@ -99,8 +99,50 @@ private:
     std::tuple<TokenIter, TokenIter> parameter_list_;
 };
 
+class Parameter : public Node {
+public:
+    Parameter(
+        TokenIter type_iter,
+        TokenIter ident_iter
+    )
+    : Node("Parameter", nullptr, {}),
+      type_iter_(type_iter),
+      ident_iter_(ident_iter)
+    {}
+
+    void print_node() override {
+        std::cout << "Parameter "
+                  << type_iter_->lexeme
+                  << " "
+                  << ident_iter_->lexeme
+                  << "\n";
+    }
+
+private:
+    TokenIter type_iter_;
+    TokenIter ident_iter_;
+};
+
 
 //----------------Statements----------------
+class CompoundStmt : public Node {
+public:
+    CompoundStmt(
+        Node* parent_ptr,
+        std::tuple<TokenIter, TokenIter> stmt_range
+    )
+    : Node("CompoundStmt", parent_ptr, {}),
+      stmt_range_(stmt_range)
+    {}
+
+    void print_node() override {
+        std::cout << node_name << '\n';
+    }
+
+private:
+    std::tuple<TokenIter, TokenIter> stmt_range_;
+};
+
 class ExpressionStmt : public Node {
 public:
     ExpressionStmt(
@@ -256,9 +298,6 @@ public:
     {}
 
     void print_node() override {std::cout << ident_iter_->lexeme;}
-    void add_shild() {
-
-    }
 
 private:
     TokenIter ident_iter_;
@@ -574,19 +613,15 @@ private:
         auto end_iter = std::get<1>(param_list);
 
         while (token_iter < end_iter) {
-            if ((token_iter + 1) < end_iter && token_iter->type == Lexer::TokenType::TOKEN_INT && (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT) {
+            if ((token_iter + 1) < end_iter &&
+                token_iter->type == Lexer::TokenType::TOKEN_INT &&
+                (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
+            {
                 parameter_list->add_child(
-                    std::make_unique<IntegerExpr>(token_iter + 1)
+                    std::make_unique<Parameter>(token_iter, token_iter + 1)
                 );
 
                 token_iter += 2;
-            }
-            else if (token_iter->type == Lexer::TokenType::TOKEN_DECIMAL_INT) {
-                parameter_list->add_child(
-                    std::make_unique<IntegerExpr>(token_iter)
-                );
-
-                ++token_iter;
             }
             else {
                 print_error(token_iter, "Invalid parameter.");
