@@ -10,10 +10,6 @@
 
 class Lexer {
 public:
-    Lexer(const std::string& code_file_name);
-    void print_tokens() const;
-
-private:
     // Token types
     enum class TokenType {
         // Keywords
@@ -21,7 +17,9 @@ private:
         TOKEN_FOR,
         TOKEN_IF,
         TOKEN_ELSE,
-        TOKEN_RETURN,
+        TOKEN_CONTINUE, // Unimplemented
+        TOKEN_BREAK, // Unimplemented
+        TOKEN_RETURN, 
         // Identifier
         TOKEN_IDENT,
         // Operators
@@ -29,6 +27,7 @@ private:
         TOKEN_SUB,
         TOKEN_MUL,
         TOKEN_DIV,
+        TOKEN_PERCENT,
         TOKEN_EQUAL,
         TOKEN_NEQUAL,
         TOKEN_ASSIGN,
@@ -36,6 +35,11 @@ private:
         TOKEN_GREATER,
         TOKEN_LESS_OR_EQ,
         TOKEN_LESS,
+        TOKEN_INC,
+        TOKEN_DEC,
+        TOKEN_LOGICAL_AND, // Unimplemented
+        TOKEN_LOGICAL_OR, // Unimplemented
+        TOKEN_NOT,
         // Punctuators
         TOKEN_L_PARENTH,
         TOKEN_R_PARENTH,
@@ -44,6 +48,7 @@ private:
         TOKEN_L_BRACKET,
         TOKEN_R_BRACKET,
         TOKEN_SEMICOLON,
+        TOKEN_COMMA,
         // String & numbers
         TOKEN_STRING,
         TOKEN_DECIMAL_INT,
@@ -53,7 +58,6 @@ private:
         TOKEN_TAB,
         TOKEN_FILE_END
     };
-
     // Token structure
     struct Token {
         TokenType type;
@@ -61,17 +65,22 @@ private:
         int column;
         std::string lexeme;
     };
+    Lexer(const std::string& code_file_name);
+    void print_tokens(const int initial_pad = 0) const;
+    const std::vector<Token>& get_token_list() const;
 
+    // Static lookup tables
+    static const std::unordered_map<std::string_view, TokenType> keywords;
+    static const std::unordered_map<TokenType, std::string> token_names;
+
+private:
     // Member variables
-    std::string code_text_;
     std::vector<Token> token_list_;
+    std::string code_text_;
     std::size_t char_pos_;
     int line_;
     int column_;
 
-    // Static lookup tables (declaration only)
-    static const std::unordered_map<std::string_view, TokenType> keywords;
-    static const std::unordered_map<TokenType, std::string> token_names;
 
     // Private methods
     void parse_tokens();
@@ -87,4 +96,11 @@ private:
     bool is_alpha_or_underscore(char ch) const;
     bool is_keyword_or_id_char(char ch) const;
     bool is_decimal_integer_start() const;
+
+    // Print methods
+    void print_token_table_line(const Lexer::Token& token,
+                                const std::vector<int>& column_pad) const;
+
+    void print_token_table_column_names(const std::vector<std::string>& column_name,
+                                        const std::vector<int>& column_pad) const;
 };
