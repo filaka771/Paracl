@@ -553,11 +553,13 @@ private:
         );
 
         function_node->add_child(
-        parse_parameters_list(param_list_iter)
+            parse_parameters_list(param_list_iter)
         );
 
+        auto compound_begin = std::get<0>(compound_stmt_iter);
+
         function_node->add_child(
-            std::make_unique<CompoundStmt>(nullptr, compound_stmt_iter)
+            parse_compound_statement(compound_begin)
         );
 
         return function_node;
