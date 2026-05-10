@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <cctype>
-#include <numeric>
 #include <algorithm>
 #include "lexer.h"
 
@@ -43,7 +42,7 @@ const std::unordered_map<Lexer::TokenType, std::string> Lexer::token_names = {
     {TokenType::TOKEN_INC, "INC"},
     {TokenType::TOKEN_DEC, "DEC"},
     {TokenType::TOKEN_LOGICAL_AND, "LOG_AND"},
-    {TokenType::TOKEN_LOGICAL_OR, "LOG_OF"},
+    {TokenType::TOKEN_LOGICAL_OR, "LOG_OR"},
     {TokenType::TOKEN_NOT, "NOT"},
     {TokenType::TOKEN_L_PARENTH,     "L_PARENTH"},
     {TokenType::TOKEN_R_PARENTH,     "R_PARENTH"},
@@ -73,9 +72,27 @@ Lexer::Lexer(const std::string& code_file_name)
 const std::vector<Lexer::Token>& Lexer::get_token_list() const {
     return static_cast<const std::vector<Lexer::Token>&>(token_list_);
 };
+// ---------- Diagnostic ----------
+const std::vector<Lexer::Diagnostic>& Lexer::get_diagnostics() const {
+    return diagnostics_;
+}
 
+bool Lexer::has_errors() const {
+    return !diagnostics_.empty();
+}
+
+void Lexer::report_error(int line, int column,
+                         std::string message,
+                         std::string lexeme) {
+    diagnostics_.push_back({
+        line,
+        column,
+        std::move(message),
+        lexeme
+    });
+
+}
 // ---------- Print_tokens ----------
-
 void Lexer::print_tokens(const int initial_pad) const {
     // Token table consists of 4 columns:
     // First column contain token name
@@ -194,7 +211,7 @@ void Lexer::parse_tokens() {
         if (is_alpha_or_underscore(code_text_[char_pos_])) {
             parse_identifier_or_keyword();
         }
-        else if (std::isdigit(code_text_[char_pos_])) {
+        else if (std::isdigit(static_cast<unsigned char>(code_text_[char_pos_]))) {
             parse_number();
         }
         else if (code_text_[char_pos_] == '"') {
@@ -331,20 +348,38 @@ void Lexer::parse_operator_or_punctuator() {
             }
             break;
         case '|':
-            if(code_text_[char_pos_ + 1] == '|') {
+            if (code_text_[char_pos_ + 1] == '|') {
                 type = TokenType::TOKEN_LOGICAL_OR;
                 lexeme = "||";
                 char_pos_ += 2;
+            } else {
+                report_error(
+                    line_,
+                    column_,
+                    "Unexpected character. Did you mean '||'?",
+                    std::string(1, code_text_[char_pos_])
+                );
+                char_pos_++;
+                column_++;
+                return;
             }
-            else {char_pos_++;}
             break;
         case '&':
-            if(code_text_[char_pos_ + 1] == '&') {
-                type = TokenType::TOKEN_LOGICAL_OR;
+            if (code_text_[char_pos_ + 1] == '&') {
+                type = TokenType::TOKEN_LOGICAL_AND;
                 lexeme = "&&";
                 char_pos_ += 2;
+            } else {
+                report_error(
+                    line_,
+                    column_,
+                    "Unexpected character. Did you mean '&&'?",
+                    std::string(1, code_text_[char_pos_])
+                );
+                char_pos_++;
+                column_++;
+                return;
             }
-            else {char_pos_++;}
             break;
         case '(': type = TokenType::TOKEN_L_PARENTH; lexeme = "("; char_pos_++; break;
         case ')': type = TokenType::TOKEN_R_PARENTH; lexeme = ")"; char_pos_++; break;
@@ -354,8 +389,14 @@ void Lexer::parse_operator_or_punctuator() {
         case ']': type = TokenType::TOKEN_R_BRACKET; lexeme = "]"; char_pos_++; break;
         case ';': type = TokenType::TOKEN_SEMICOLON; lexeme = ";"; char_pos_++; break;
         default:
-            // Unknown character!
+            report_error(
+                line_,
+                column_,
+                "Unexpected character!",
+                std::string(1, code_text_[char_pos_])
+            );
             char_pos_++;
+            column_++;
             return;
     }
 
@@ -366,7 +407,7 @@ void Lexer::parse_operator_or_punctuator() {
 void Lexer::parse_number() {
     std::size_t start = char_pos_;
     // Decimal integers
-    while (std::isdigit(code_text_[char_pos_])) {
+    while (std::isdigit(static_cast<unsigned char>(code_text_[char_pos_]))) {
         char_pos_++;
     }
     std::string lexeme = code_text_.substr(start, char_pos_ - start);
@@ -375,48 +416,90 @@ void Lexer::parse_number() {
 }
 
 void Lexer::parse_string() {
+    int start_line = line_;
+    int start_column = column_;
+
     char_pos_++; // skip opening "
+    column_++;
+
     std::size_t start = char_pos_;
-    while (code_text_[char_pos_] != '"' && code_text_[char_pos_] != '\0') {
+
+    while (code_text_[char_pos_] != '"' &&
+           code_text_[char_pos_] != '\0' &&
+           code_text_[char_pos_] != '\n') {
         char_pos_++;
+        column_++;
     }
+
     std::string lexeme = code_text_.substr(start, char_pos_ - start);
+
     if (code_text_[char_pos_] == '"') {
-        char_pos_++; // skip closing "
+        char_pos_++;
+        column_++;
+
+        token_list_.push_back({
+            TokenType::TOKEN_STRING,
+            start_line,
+            start_column,
+            lexeme
+        });
+    } else {
+        report_error(
+            start_line,
+            start_column,
+            "Unterminated string literal",
+            lexeme
+        );
     }
-    token_list_.push_back({TokenType::TOKEN_STRING, line_, column_, lexeme});
-    // column update: +2 for the quotes, + length of content
-    column_ += static_cast<int>(lexeme.size()) + 2;
 }
 
 void Lexer::parse_comment() {
-    // We already know current char is '/' and next is '/' or '*'
+    int start_line = line_;
+    int start_column = column_;
+
+    // Could be singleline or multiline comment
     if (code_text_[char_pos_ + 1] == '/') {
-        // single‑line comment: consume until newline or EOF
         char_pos_ += 2;
-        while (code_text_[char_pos_] != '\n' && code_text_[char_pos_] != '\0') {
+        column_ += 2;
+
+        while (code_text_[char_pos_] != '\n' &&
+               code_text_[char_pos_] != '\0') {
             char_pos_++;
+            column_++;
         }
-        // newline will be handled by the whitespace parser on the next iteration
     }
     else if (code_text_[char_pos_ + 1] == '*') {
-        // multi‑line comment
         char_pos_ += 2;
-        while (!(code_text_[char_pos_] == '*' && code_text_[char_pos_ + 1] == '/') &&
+        column_ += 2;
+
+        while (!(code_text_[char_pos_] == '*' &&
+                 code_text_[char_pos_ + 1] == '/') &&
                code_text_[char_pos_] != '\0') {
+
             if (code_text_[char_pos_] == '\n') {
                 line_++;
                 column_ = 1;
             } else {
                 column_++;
             }
+
             char_pos_++;
         }
-        if (code_text_[char_pos_] == '*') {
-            char_pos_ += 2; // skip "*/"
+
+        if (code_text_[char_pos_] == '\0') {
+            report_error(
+                start_line,
+                start_column,
+                "Unterminated multiline comment!",
+                "/*"
+            );
+            return;
         }
+
+        // skip closing */
+        char_pos_ += 2;
+        column_ += 2;
     }
-    // No token is added for comments
 }
 
 // ---------- Helper functions ----------

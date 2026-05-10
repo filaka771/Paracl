@@ -1,12 +1,8 @@
 #pragma once
 
-#include <iostream>
-#include <fstream>
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <stdexcept>
-#include <cctype>
 
 class Lexer {
 public:
@@ -17,8 +13,8 @@ public:
         TOKEN_FOR,
         TOKEN_IF,
         TOKEN_ELSE,
-        TOKEN_CONTINUE, // Unimplemented
-        TOKEN_BREAK, // Unimplemented
+        TOKEN_CONTINUE,
+        TOKEN_BREAK,
         TOKEN_RETURN, 
         // Identifier
         TOKEN_IDENT,
@@ -37,8 +33,8 @@ public:
         TOKEN_LESS,
         TOKEN_INC,
         TOKEN_DEC,
-        TOKEN_LOGICAL_AND, // Unimplemented
-        TOKEN_LOGICAL_OR, // Unimplemented
+        TOKEN_LOGICAL_AND,
+        TOKEN_LOGICAL_OR,
         TOKEN_NOT,
         // Punctuators
         TOKEN_L_PARENTH,
@@ -73,6 +69,17 @@ public:
     static const std::unordered_map<std::string_view, TokenType> keywords;
     static const std::unordered_map<TokenType, std::string> token_names;
 
+    // Diagnostic
+    struct Diagnostic {
+        int line;
+        int column;
+        std::string message;
+        std::string lexeme;
+    };
+
+    const std::vector<Diagnostic>& get_diagnostics() const;
+    bool has_errors() const;
+
 private:
     // Member variables
     std::vector<Token> token_list_;
@@ -81,6 +88,12 @@ private:
     int line_;
     int column_;
 
+    // Diagnostic
+    std::vector<Diagnostic> diagnostics_;
+
+    void report_error(int line, int column,
+                      std::string message,
+                      std::string lexeme);
 
     // Private methods
     void parse_tokens();
