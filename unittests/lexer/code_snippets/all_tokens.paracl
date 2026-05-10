@@ -1,0 +1,43 @@
+int function() {
+    int a = 5;
+    int b = 10;
+    int c;
+    c = a + b;
+    c = a - b;
+    c = a * b;
+    c = a / b;
+
+    for (int i = 0; i < b; i = i + 1) {
+        c = c + 1;
+    }
+
+    if (a > b){
+        c = c + 1;
+    }
+
+    if (a < b){
+        c = c + 1;
+    }
+
+    if (a < b){
+        c = c + 1;
+    }
+
+    if (a <= b){
+        c = c + 1;
+    }
+
+    if (a == b){
+        c = c + 1;
+    }
+
+    if (a != b){
+        c = c + 1;
+    }
+
+    else {
+        c = c + 1;
+    }
+
+    return c;
+}
