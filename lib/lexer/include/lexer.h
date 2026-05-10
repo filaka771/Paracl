@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "cli-tabel.h"
 
 class Lexer {
 public:
@@ -80,6 +81,24 @@ public:
     const std::vector<Diagnostic>& get_diagnostics() const;
     bool has_errors() const;
 
+    // Print
+    struct TokenPrintRow {
+        std::string token_name;
+        std::string position;
+        std::string token_code;
+        std::string lexeme;
+    };
+
+    template<>
+    struct field_tuple<TokenPrintRow> {
+        static constexpr auto value = std::make_tuple(
+            &TokenPrintRow::token_name,
+            &TokenPrintRow::position,
+            &TokenPrintRow::token_code,
+            &TokenPrintRow::lexeme
+        );
+    };
+
 private:
     // Member variables
     std::vector<Token> token_list_;
@@ -111,9 +130,6 @@ private:
     bool is_decimal_integer_start() const;
 
     // Print methods
-    void print_token_table_line(const Lexer::Token& token,
-                                const std::vector<int>& column_pad) const;
 
-    void print_token_table_column_names(const std::vector<std::string>& column_name,
-                                        const std::vector<int>& column_pad) const;
+    void print_tokens(const int initial_pad) const;
 };

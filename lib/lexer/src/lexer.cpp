@@ -7,6 +7,7 @@
 #include <cctype>
 #include <algorithm>
 #include "lexer.h"
+#include "cli-tabel.h"
 
 const std::unordered_map<std::string_view, Lexer::TokenType> Lexer::keywords = {
     {"int",    TokenType::TOKEN_INT},
@@ -94,112 +95,33 @@ void Lexer::report_error(int line, int column,
 }
 // ---------- Print_tokens ----------
 void Lexer::print_tokens(const int initial_pad) const {
-    // Token table consists of 4 columns:
-    // First column contain token name
-    // Second column contain token position in file
-    // Third column contain token numerical code
-    // Fourth column contain token string representation
-    // like it looks like in code
+    std::vector<TokenPrintRow> rows;
 
-    std::vector<int> column_pad(4);
-    std::vector<std::string> column_name = {
+    rows.push_back({
         "TOKEN NAME",
         "POSITION",
         "TOKEN CODE",
         "LEXEME"
-    };
-
-    // First column pad
-    column_pad[0] = initial_pad;
-
-    // Second column pad
-    auto cmp_lexem_names = [](const auto& a, const auto& b) {
-        return a.second.size() < b.second.size();
-    };
-
-    std::size_t max_name_length =
-        std::max_element(
-            Lexer::token_names.begin(), Lexer::token_names.end(),
-            cmp_lexem_names
-        )->second.size() + 2; // + 2 space between columns
-
-    column_pad[1] = std::max(column_name[0].size() + 2, max_name_length);
-
-    // Third column pad
-    column_pad[2] = column_pad[1] + 5 + 1 + 4 + 2; // line -> 5, : -> 1,
-                                                   // column -> 4,
-                                                   // + 2 space between columns
-
-    // Fourth column pad
-    column_pad[3] = column_pad[2] +
-                    column_name[2].size(); // less then 1000 types
-                                           // of tokens expected
-
-    print_token_table_column_names(column_name, column_pad);
+    });
 
     for (const auto& tok : token_list_) {
-        print_token_table_line(tok, column_pad);
+        rows.push_back({
+            Lexer::token_names.at(tok.type),
+            std::to_string(tok.line) + ":" + std::to_string(tok.column),
+            std::to_string(static_cast<int>(tok.type)),
+            tok.lexeme
+        });
     }
-};
 
-void Lexer::print_token_table_column_names(
-                                           const std::vector<std::string>& column_name,
-                                           const std::vector<int>& column_pad
-                                           ) const {
-    auto pad_to_column = [](int num_of_spaces) {
-        std::cout << std::string(num_of_spaces, ' ');
-    };
+    if (initial_pad > 0) {
+        std::cout << std::string(initial_pad, ' ');
+    }
 
-    // Print initial pad
-    pad_to_column(column_pad[0]);
-
-    // Print first column
-    std::cout << column_name[0];
-    pad_to_column(column_pad[1] - column_pad[0] - column_name[0].size());
-
-    // Print second column
-    std::cout << column_name[1];
-    pad_to_column(column_pad[2] - column_pad[1] - column_name[1].size());
-
-    // Print third column
-    std::cout << column_name[2];
-    pad_to_column(column_pad[3] - column_pad[2] - column_name[2].size());
-
-    //Print fourth column
-    std::cout << column_name[3] << std::endl;
-};
-
-void Lexer::print_token_table_line(const Lexer::Token& token,
-                                   const std::vector<int>& column_pad) const {
-
-    auto pad_to_column = [](int num_of_spaces) {
-        std::cout << std::string(num_of_spaces, ' ');
-    };
-
-    // Print initial pad
-    pad_to_column(column_pad[0]);
-
-    // Print first column
-    std::string token_type = Lexer::token_names.at(token.type);
-    std::cout << token_type;
-    pad_to_column(column_pad[1] - column_pad[0] - token_type.size());
-
-    // Print second column
-    std::string position = std::to_string(token.line) + ':' + std::to_string(token.column);
-    std::cout << position;
-    pad_to_column(column_pad[2] - column_pad[1] - position.size());
-
-    // Print third column
-    std::string token_code = std::to_string(static_cast<int>(token.type));
-    std::cout << token_code;
-    pad_to_column(column_pad[3] - column_pad[2] - token_code.size());
-
-    //Print fourth column
-    std::cout << token.lexeme << std::endl;
-};
+    CliTable<TokenPrintRow> table;
+    table.print(rows, " | ", true);
+}
 
 // ---------- Parse_tokens ----------
-
 void Lexer::parse_tokens() {
     bool eof = false;
     while (!eof) {
