@@ -40,9 +40,6 @@ public:
     }
 };
 
-//----------------Types----------------
-
-
 //----------------Program----------------
 class Program : public Node {
 public:
@@ -420,9 +417,25 @@ public:
         return token_list_;
     }
 
+    void PrintAST() {
+        PrintAST(*program_);
+    }
+
+
 private:
     TokenList token_list_;
     std::unique_ptr<Program> program_;
+
+    void PrintAST(Node& node, int depth = 0) {
+        const int indent_size = 2;
+
+        std::cout << std::string(depth * indent_size, ' ');
+        node.print_node();
+
+        for (auto& child : node.children_nodes) {
+            PrintAST(*child, depth + 1);
+        }
+    }
 
     void print_error(TokenIter token_iter, const std::string& error_msg) {
         if (token_list_.empty()) {
