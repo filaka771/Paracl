@@ -89,16 +89,6 @@ public:
         std::string lexeme;
     };
 
-    template<>
-    struct field_tuple<TokenPrintRow> {
-        static constexpr auto value = std::make_tuple(
-            &TokenPrintRow::token_name,
-            &TokenPrintRow::position,
-            &TokenPrintRow::token_code,
-            &TokenPrintRow::lexeme
-        );
-    };
-
 private:
     // Member variables
     std::vector<Token> token_list_;
@@ -129,7 +119,14 @@ private:
     bool is_keyword_or_id_char(char ch) const;
     bool is_decimal_integer_start() const;
 
-    // Print methods
+};
 
-    void print_tokens(const int initial_pad) const;
+template<>
+struct field_tuple<Lexer::TokenPrintRow> {
+    static constexpr auto value = std::make_tuple(
+        &Lexer::TokenPrintRow::token_name,
+        &Lexer::TokenPrintRow::position,
+        &Lexer::TokenPrintRow::token_code,
+        &Lexer::TokenPrintRow::lexeme
+    );
 };

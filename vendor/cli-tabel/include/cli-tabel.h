@@ -1,3 +1,5 @@
+#pragma once
+
 #include <iostream>
 #include <vector>
 #include <tuple>
@@ -109,34 +111,3 @@ private:
         ++col;
     }
 };
-
-struct Person {
-    std::string name;
-    int age;
-    double height;  // in meters
-};
-
-// Specialize field_tuple for Person – list the member pointers in the desired column order
-template<>
-struct field_tuple<Person> {
-    static constexpr auto value = std::make_tuple(
-        &Person::name,
-        &Person::age,
-        &Person::height
-    );
-};
-
-int main() {
-    std::vector<Person> people = {
-        {"Alice", 30, 1.65},
-        {"Bob", 25, 1.80},
-        {"Charlie", 35, 1.75}
-    };
-
-    CliTable<Person> table;
-    table.print(people, " | ");
-    std::cout << std::endl;
-    table.print(people, " | ", /*precise_alignment=*/ true);
-
-    return 0;
-}

@@ -410,7 +410,7 @@ public:
     using ChildNode = std::vector<std::unique_ptr<Node>>;
     using ExprRange = std::tuple<TokenIter, TokenIter>;
 
-    Parser(Lexer lexer)
+    Parser(const Lexer& lexer)
     : token_list_(lexer.get_token_list())
     {
         program_ = parse_program();
