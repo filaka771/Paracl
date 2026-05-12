@@ -294,7 +294,9 @@ public:
     : Node("IdentifierExpr", nullptr, {}), ident_iter_(ident_iter)
     {}
 
-    void print_node() override {std::cout << ident_iter_->lexeme;}
+    void print_node() override {
+        std::cout << node_name<< " " << ident_iter_->lexeme << "\n";
+    }
 
 private:
     TokenIter ident_iter_;
@@ -309,7 +311,7 @@ public:
     {}
 
     void print_node() override {
-        std::cout << token_iter_->lexeme << "\n";
+        std::cout << node_name << " " << token_iter_->lexeme << "\n";
     }
 
 private:
