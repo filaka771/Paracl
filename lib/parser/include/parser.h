@@ -295,7 +295,7 @@ public:
     {}
 
     void print_node() override {
-        std::cout << node_name<< " " << ident_iter_->lexeme << "\n";
+        std::cout << node_name<< " \"" << ident_iter_->lexeme << "\"\n";
     }
 
 private:
@@ -311,7 +311,7 @@ public:
     {}
 
     void print_node() override {
-        std::cout << node_name << " " << token_iter_->lexeme << "\n";
+        std::cout << node_name << " \"" << token_iter_->lexeme << "\"\n";
     }
 
 private:
@@ -326,7 +326,7 @@ public:
     {}
 
     void print_node() override {
-        std::cout << "PostfixOp" << std::get<1>(postfix_iter_iter_)->lexeme << "\n";
+        std::cout << "PostfixOp \"" << std::get<1>(postfix_iter_iter_)->lexeme << "\"\n";
     }
 
 private:
@@ -378,7 +378,7 @@ public:
     {}
 
     void print_node() override {
-        std::cout << node_name << " " << mul_op_iter_->lexeme << "\n";
+        std::cout << node_name << " \"" << mul_op_iter_->lexeme << "\"\n";
     }
 
 private:
@@ -395,7 +395,7 @@ public:
     {}
 
     void print_node() override {
-        std::cout << "AssignmentExpr " << assign_iter_->lexeme << "\n";
+        std::cout << "AssignmentExpr \"" << assign_iter_->lexeme << "\"\n";
     }
 
 private:
@@ -420,7 +420,7 @@ public:
     }
 
     void PrintAST() {
-        PrintAST(*program_);
+        PrintAST(*program_, "", true);
     }
 
 
@@ -428,14 +428,29 @@ private:
     TokenList token_list_;
     std::unique_ptr<Program> program_;
 
-    void PrintAST(Node& node, int depth = 0) {
-        const int indent_size = 2;
+    void PrintAST(
+        Node& node,
+        const std::string& prefix,
+        bool is_last_child
+    ) {
+        if (&node != program_.get()) {
+            std::cout << prefix
+                      << (is_last_child ? "\u2514" : "\u251c");
+        }
 
-        std::cout << std::string(depth * indent_size, ' ');
         node.print_node();
 
-        for (auto& child : node.children_nodes) {
-            PrintAST(*child, depth + 1);
+        const std::string child_prefix =
+            &node == program_.get()
+                ? " "
+                : prefix + (is_last_child ? "   " : "\u2502  ");
+
+        for (size_t i = 0; i < node.children_nodes.size(); ++i) {
+            PrintAST(
+                *node.children_nodes[i],
+                child_prefix,
+                i + 1 == node.children_nodes.size()
+            );
         }
     }
 
@@ -466,7 +481,7 @@ private:
                   << token_iter->line
                   << ":"
                   << token_iter->column
-                  << " "
+                  << ""
                   << error_msg
                   << std::endl;
 
