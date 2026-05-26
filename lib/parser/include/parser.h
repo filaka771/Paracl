@@ -10,6 +10,11 @@
 #include "lexer.h"
 
 //----------------Base Node----------------
+struct SourceSpan {
+    std::size_t begin;
+    std::size_t end;
+};
+
 class Node {
 public:
     using TokenList = std::vector<Lexer::Token>;
@@ -19,15 +24,18 @@ public:
     std::vector<std::unique_ptr<Node>> children_nodes;
 
     std::string node_name;
+    SourceSpan span_;
 
     Node(
         std::string node_name,
         Node* parent,
-        std::vector<std::unique_ptr<Node>> children
+        std::vector<std::unique_ptr<Node>> children,
+        SourceSpan span
     )
     : parent_node(parent),
       children_nodes(std::move(children)),
-      node_name(std::move(node_name))
+      node_name(std::move(node_name)),
+      span_(span)
     {}
 
     virtual ~Node() = default;
@@ -43,8 +51,8 @@ public:
 //----------------Program----------------
 class Program : public Node {
 public:
-    Program(std::string node_name)
-    : Node(std::move(node_name), nullptr, {})
+    Program(std::string node_name, SourceSpan span)
+    : Node(std::move(node_name), nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -58,66 +66,61 @@ public:
     FunctionDef(
         std::string node_name,
         Node* parent,
-        std::string function_id,
-        std::tuple<TokenIter, TokenIter> parameter_list,
-        std::tuple<TokenIter, TokenIter> compound_stmt
+        SourceSpan span,
+        std::string function_id
     )
-    : Node(std::move(node_name), parent, {}),
-      function_id_(std::move(function_id)),
-      parameter_list_(parameter_list),
-      compound_stmt_(compound_stmt)
+    : Node(std::move(node_name), parent, {}, span),
+      function_id_(std::move(function_id))
     {}
 
     void print_node() override {
         std::cout << node_name << ": " << function_id_ << '\n';
     }
 
+    const std::string& get_function_id() const {return function_id_;}
+
 private:
     std::string function_id_;
-    std::tuple<TokenIter, TokenIter> parameter_list_;
-    std::tuple<TokenIter, TokenIter> compound_stmt_;
 };
 
 class ParameterList : public Node {
 public:
     ParameterList(
         Node* parent_ptr,
-        std::tuple<TokenIter, TokenIter> parameter_list
+        SourceSpan span
     )
-    : Node("ParameterList", parent_ptr, {}),
-      parameter_list_(parameter_list)
+    : Node("ParameterList", parent_ptr, {}, span)
     {}
 
     void print_node() override {
         std::cout << node_name << '\n';
     }
 
-private:
-    std::tuple<TokenIter, TokenIter> parameter_list_;
 };
 
 class Parameter : public Node {
 public:
     Parameter(
-        TokenIter type_iter,
-        TokenIter ident_iter
+        SourceSpan span,
+        std::string type_name,
+        std::string ident_name
     )
-    : Node("Parameter", nullptr, {}),
-      type_iter_(type_iter),
-      ident_iter_(ident_iter)
+    : Node("Parameter", nullptr, {}, span),
+      type_name_(std::move(type_name)),
+      ident_name_(std::move(ident_name))
     {}
 
     void print_node() override {
         std::cout << "Parameter "
-                  << type_iter_->lexeme
+                  << type_name_
                   << " "
-                  << ident_iter_->lexeme
+                  << ident_name_
                   << "\n";
     }
 
 private:
-    TokenIter type_iter_;
-    TokenIter ident_iter_;
+    std::string type_name_;
+    std::string ident_name_;
 };
 
 
@@ -126,65 +129,48 @@ class CompoundStmt : public Node {
 public:
     CompoundStmt(
         Node* parent_ptr,
-        std::tuple<TokenIter, TokenIter> stmt_range
+        SourceSpan span
     )
-    : Node("CompoundStmt", parent_ptr, {}),
-      stmt_range_(stmt_range)
+    : Node("CompoundStmt", parent_ptr, {}, span)
     {}
 
     void print_node() override {
         std::cout << node_name << '\n';
     }
 
-private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
 };
 
 class ExpressionStmt : public Node {
 public:
-    ExpressionStmt(
-        std::tuple<TokenIter, TokenIter> stmt_range,
-        std::tuple<TokenIter, TokenIter> expr_range
-    )
-    : Node("ExpressionStmt", nullptr, {}),
-      stmt_range_(stmt_range),
-      expr_range_(expr_range)
+    ExpressionStmt(SourceSpan span)
+    : Node("ExpressionStmt", nullptr, {}, span)
     {}
 
     void print_node() override {
         std::cout << node_name << "\n";
     }
 
-private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
-    std::tuple<TokenIter, TokenIter> expr_range_;
 };
 
 class NullStmt : public Node {
 public:
-    NullStmt(std::tuple<TokenIter, TokenIter> stmt_range)
-    : Node("NullStmt", nullptr, {}),
-      stmt_range_(stmt_range)
+    NullStmt(SourceSpan span)
+    : Node("NullStmt", nullptr, {}, span)
     {}
 
     void print_node() override {
         std::cout << node_name << "\n";
     }
 
-private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
 };
 
 class IfStmt : public Node {
 public:
     IfStmt(
-        std::tuple<TokenIter, TokenIter> stmt_range,
-        std::tuple<TokenIter, TokenIter> condition_range,
+        SourceSpan span,
         bool has_else
     )
-    : Node("IfStmt", nullptr, {}),
-      stmt_range_(stmt_range),
-      condition_range_(condition_range),
+    : Node("IfStmt", nullptr, {}, span),
       has_else_(has_else)
     {}
 
@@ -193,27 +179,18 @@ public:
     }
 
 private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
-    std::tuple<TokenIter, TokenIter> condition_range_;
     bool has_else_;
 };
 
 class ForStmt : public Node {
 public:
     ForStmt(
-        std::tuple<TokenIter, TokenIter> stmt_range,
-        std::tuple<TokenIter, TokenIter> init_range,
-        std::tuple<TokenIter, TokenIter> cond_range,
-        std::tuple<TokenIter, TokenIter> step_range,
+        SourceSpan span,
         bool has_init,
         bool has_cond,
         bool has_step
     )
-    : Node("ForStmt", nullptr, {}),
-      stmt_range_(stmt_range),
-      init_range_(init_range),
-      cond_range_(cond_range),
-      step_range_(step_range),
+    : Node("ForStmt", nullptr, {}, span),
       has_init_(has_init),
       has_cond_(has_cond),
       has_step_(has_step)
@@ -224,11 +201,6 @@ public:
     }
 
 private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
-    std::tuple<TokenIter, TokenIter> init_range_;
-    std::tuple<TokenIter, TokenIter> cond_range_;
-    std::tuple<TokenIter, TokenIter> step_range_;
-
     bool has_init_;
     bool has_cond_;
     bool has_step_;
@@ -237,13 +209,10 @@ private:
 class ReturnStmt : public Node {
 public:
     ReturnStmt(
-        std::tuple<TokenIter, TokenIter> stmt_range,
-        std::tuple<TokenIter, TokenIter> expr_range,
+        SourceSpan span,
         bool has_expr
     )
-    : Node("ReturnStmt", nullptr, {}),
-      stmt_range_(stmt_range),
-      expr_range_(expr_range),
+    : Node("ReturnStmt", nullptr, {}, span),
       has_expr_(has_expr)
     {}
 
@@ -252,111 +221,101 @@ public:
     }
 
 private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
-    std::tuple<TokenIter, TokenIter> expr_range_;
     bool has_expr_;
 };
 
 class BreakStmt : public Node {
 public:
-    BreakStmt(std::tuple<TokenIter, TokenIter> stmt_range)
-    : Node("BreakStmt", nullptr, {}),
-      stmt_range_(stmt_range)
+    BreakStmt(SourceSpan span)
+    : Node("BreakStmt", nullptr, {}, span)
     {}
 
     void print_node() override {
         std::cout << node_name << "\n";
     }
 
-private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
 };
 
 class ContinueStmt : public Node {
 public:
-    ContinueStmt(std::tuple<TokenIter, TokenIter> stmt_range)
-    : Node("ContinueStmt", nullptr, {}),
-      stmt_range_(stmt_range)
+    ContinueStmt(SourceSpan span)
+    : Node("ContinueStmt", nullptr, {}, span)
     {}
 
     void print_node() override {
         std::cout << node_name << "\n";
     }
 
-private:
-    std::tuple<TokenIter, TokenIter> stmt_range_;
 };
 
 //----------------Expressions----------------
 class IdentifierExpr : public Node {
 public:
-    IdentifierExpr(TokenIter ident_iter)
-    : Node("IdentifierExpr", nullptr, {}), ident_iter_(ident_iter)
+    IdentifierExpr(SourceSpan span, std::string ident_name)
+    : Node("IdentifierExpr", nullptr, {}, span),
+      ident_name_(std::move(ident_name))
     {}
 
     void print_node() override {
-        std::cout << node_name<< " \"" << ident_iter_->lexeme << "\"\n";
+        std::cout << node_name<< " \"" << ident_name_ << "\"\n";
     }
 
 private:
-    TokenIter ident_iter_;
-
+    std::string ident_name_;
 };
 
 class IntegerExpr : public Node {
 public:
-    IntegerExpr(TokenIter token_iter)
-    : Node("IntegerExpr", nullptr, {}),
-      token_iter_(token_iter)
+    IntegerExpr(SourceSpan span, std::string token_value)
+    : Node("IntegerExpr", nullptr, {}, span),
+      token_value_(std::move(token_value))
     {}
 
     void print_node() override {
-        std::cout << node_name << " \"" << token_iter_->lexeme << "\"\n";
+        std::cout << node_name << " \"" << token_value_ << "\"\n";
     }
 
 private:
-    TokenIter token_iter_;
+    std::string token_value_;
 };
 
 class PostfixExpr : public Node {
 public:
-    PostfixExpr(std::tuple<TokenIter, TokenIter> postfix_expr_iter)
-    : Node("PostfixExpr", nullptr, {}),
-      postfix_iter_iter_(postfix_expr_iter)
+    PostfixExpr(SourceSpan span, std::string op_lexeme)
+    : Node("PostfixExpr", nullptr, {}, span),
+      op_lexeme_(std::move(op_lexeme))
     {}
 
     void print_node() override {
-        std::cout << "PostfixOp \"" << std::get<1>(postfix_iter_iter_)->lexeme << "\"\n";
+        std::cout << "PostfixOp \"" << op_lexeme_ << "\"\n";
     }
 
 private:
-    std::tuple<TokenIter, TokenIter> postfix_iter_iter_;
+    std::string op_lexeme_;
 };
 
 
 class FuncCallExpr : public Node {
 public:
     FuncCallExpr(
-        TokenIter func_ident_iter,
-        std::tuple<TokenIter, TokenIter> argument_list_iter
-    ) : Node("FunctionCall", nullptr, {}),
-        func_ident_iter_(func_ident_iter),
-        argument_list_iter_(argument_list_iter)
+        SourceSpan span,
+        std::string func_name
+    ) : Node("FunctionCall", nullptr, {}, span),
+        func_name_(std::move(func_name))
     {}
 
     void print_node() override {
-        std::cout << "FunctionCall " << func_ident_iter_->lexeme << "\n";
+        std::cout << "FunctionCall " << func_name_ << "\n";
     }
 
 private:
-    TokenIter func_ident_iter_;
-    std::tuple<TokenIter, TokenIter> argument_list_iter_;
+    std::string func_name_;
 };
 
 class ArgumentListExpr : public Node {
 public:
-    ArgumentListExpr()
-    : Node("ArgumentList", nullptr, {})
+    ArgumentListExpr(SourceSpan span)
+    : Node("ArgumentList", nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -368,38 +327,33 @@ class BinaryOperExpr : public Node {
 public:
     BinaryOperExpr(
         std::string node_name,
-        TokenIter mul_op_iter,
-        std::tuple<TokenIter, TokenIter> left_expr,
-        std::tuple<TokenIter, TokenIter> right_expr
-    ) : Node(node_name, nullptr, {}),
-        mul_op_iter_(mul_op_iter),
-        left_expr_(left_expr),
-        right_expr_(right_expr)
+        SourceSpan span,
+        std::string op_lexeme
+    ) : Node(node_name, nullptr, {}, span),
+        op_lexeme_(std::move(op_lexeme))
     {}
 
     void print_node() override {
-        std::cout << node_name << " \"" << mul_op_iter_->lexeme << "\"\n";
+        std::cout << node_name << " \"" << op_lexeme_ << "\"\n";
     }
 
 private:
-    TokenIter mul_op_iter_;
-    std::tuple<TokenIter, TokenIter> left_expr_;
-    std::tuple<TokenIter, TokenIter> right_expr_;
+    std::string op_lexeme_;
 };
 
 class AssignmentExpr : public Node {
 public:
-    AssignmentExpr(TokenIter assign_iter)
-    : Node("AssignmentExpr", nullptr, {}),
-      assign_iter_(assign_iter)
+    AssignmentExpr(SourceSpan span, std::string assign_lexeme)
+    : Node("AssignmentExpr", nullptr, {}, span),
+      assign_lexeme_(std::move(assign_lexeme))
     {}
 
     void print_node() override {
-        std::cout << "AssignmentExpr \"" << assign_iter_->lexeme << "\"\n";
+        std::cout << "AssignmentExpr \"" << assign_lexeme_ << "\"\n";
     }
 
 private:
-    TokenIter assign_iter_;
+    std::string assign_lexeme_;
 };
 //----------------Parser----------------
 class Parser {
@@ -408,6 +362,10 @@ public:
     using TokenIter = TokenList::iterator;
     using ChildNode = std::vector<std::unique_ptr<Node>>;
     using ExprRange = std::tuple<TokenIter, TokenIter>;
+    struct ParseResult {
+        TokenList token_list;
+        std::unique_ptr<Program> program;
+    };
 
     Parser(const Lexer& lexer)
     : token_list_(lexer.get_token_list())
@@ -419,6 +377,13 @@ public:
         return token_list_;
     }
 
+    ParseResult release_parse_result() {
+        return ParseResult{
+            std::move(token_list_),
+            std::move(program_)
+        };
+    }
+
     void PrintAST() {
         PrintAST(*program_, "", true);
     }
@@ -427,6 +392,26 @@ public:
 private:
     TokenList token_list_;
     std::unique_ptr<Program> program_;
+
+    std::size_t to_index(TokenIter token_iter) {
+        return static_cast<std::size_t>(
+            std::distance(token_list_.begin(), token_iter)
+        );
+    }
+
+    SourceSpan make_span(TokenIter token_iter) {
+        const auto index = to_index(token_iter);
+        return SourceSpan{index, index};
+    }
+
+    SourceSpan make_span(
+        const std::tuple<TokenIter, TokenIter>& token_range
+    ) {
+        return SourceSpan{
+            to_index(std::get<0>(token_range)),
+            to_index(std::get<1>(token_range))
+        };
+    }
 
     void PrintAST(
         Node& node,
@@ -546,7 +531,11 @@ private:
 
     //---------------------------------Parsers------------------------------
     std::unique_ptr<Program> parse_program() {
-        auto program = std::make_unique<Program>("Program");
+        auto program_span = token_list_.empty()
+            ? SourceSpan{0, 0}
+            : SourceSpan{0, token_list_.size() - 1};
+
+        auto program = std::make_unique<Program>("Program", program_span);
 
         auto token_iter = token_list_.begin();
 
@@ -616,9 +605,8 @@ private:
         auto function_node = std::make_unique<FunctionDef>(
             "FunctionDef",
             nullptr,
-            func_name_iter->lexeme,
-            param_list_iter,
-            compound_stmt_iter
+            SourceSpan{to_index(func_name_iter - 1), to_index(std::get<1>(compound_stmt_iter))},
+            func_name_iter->lexeme
         );
 
         function_node->add_child(
@@ -637,7 +625,10 @@ private:
     std::unique_ptr<ParameterList> parse_parameters_list(
         std::tuple<TokenIter, TokenIter> param_list
     ) {
-        auto parameter_list = std::make_unique<ParameterList>(nullptr, param_list);
+        auto parameter_list = std::make_unique<ParameterList>(
+            nullptr,
+            make_span(param_list)
+        );
 
         auto token_iter = std::get<0>(param_list) + 1;
         auto end_iter = std::get<1>(param_list);
@@ -648,7 +639,11 @@ private:
                 (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
             {
                 parameter_list->add_child(
-                    std::make_unique<Parameter>(token_iter, token_iter + 1)
+                    std::make_unique<Parameter>(
+                        SourceSpan{to_index(token_iter), to_index(token_iter + 1)},
+                        token_iter->lexeme,
+                        (token_iter + 1)->lexeme
+                    )
                 );
 
                 token_iter += 2;
@@ -766,7 +761,7 @@ private:
 
         auto compound_node = std::make_unique<CompoundStmt>(
             nullptr,
-            compound_range
+            make_span(compound_range)
         );
 
         auto stmt_iter = std::get<0>(compound_range) + 1;
@@ -799,10 +794,7 @@ private:
         auto stmt_range = std::make_tuple(stmt_begin, semicolon_iter);
         auto expr_range = std::make_tuple(stmt_begin, semicolon_iter - 1);
 
-        auto expr_stmt = std::make_unique<ExpressionStmt>(
-            stmt_range,
-            expr_range
-        );
+        auto expr_stmt = std::make_unique<ExpressionStmt>(make_span(stmt_range));
 
         expr_stmt->add_child(
             parse_expr(expr_range)
@@ -826,7 +818,7 @@ private:
 
         ++token_iter;
 
-        return std::make_unique<NullStmt>(stmt_range);
+        return std::make_unique<NullStmt>(make_span(stmt_range));
     }
 
     std::unique_ptr<Node> parse_if_statement(
@@ -891,8 +883,7 @@ private:
         auto stmt_end = token_iter - 1;
 
         auto if_node = std::make_unique<IfStmt>(
-            std::make_tuple(stmt_begin, stmt_end),
-            condition_range,
+            SourceSpan{to_index(stmt_begin), to_index(stmt_end)},
             has_else
         );
 
@@ -1016,10 +1007,7 @@ private:
         auto stmt_end = token_iter - 1;
 
         auto for_node = std::make_unique<ForStmt>(
-            std::make_tuple(stmt_begin, stmt_end),
-            init_range,
-            cond_range,
-            step_range,
+            SourceSpan{to_index(stmt_begin), to_index(stmt_end)},
             has_init,
             has_cond,
             has_step
@@ -1070,8 +1058,7 @@ private:
             : std::make_tuple(semicolon_iter, semicolon_iter);
 
         auto return_node = std::make_unique<ReturnStmt>(
-            std::make_tuple(stmt_begin, semicolon_iter),
-            expr_range,
+            SourceSpan{to_index(stmt_begin), to_index(semicolon_iter)},
             has_expr
         );
 
@@ -1111,7 +1098,7 @@ private:
 
         ++token_iter;
 
-        return std::make_unique<BreakStmt>(stmt_range);
+        return std::make_unique<BreakStmt>(make_span(stmt_range));
     }
 
     std::unique_ptr<Node> parse_continue_statement(
@@ -1139,7 +1126,7 @@ private:
 
         ++token_iter;
 
-        return std::make_unique<ContinueStmt>(stmt_range);
+        return std::make_unique<ContinueStmt>(make_span(stmt_range));
     }
 
     // EXPRASSIONS
@@ -1151,11 +1138,17 @@ private:
     
     std::unique_ptr<Node> parse_primary_expr(TokenIter primary_iter) {
         if (primary_iter->type == Lexer::TokenType::TOKEN_IDENT) {
-            return std::make_unique<IdentifierExpr>(primary_iter);
+            return std::make_unique<IdentifierExpr>(
+                make_span(primary_iter),
+                primary_iter->lexeme
+            );
         }
 
         if (primary_iter->type == Lexer::TokenType::TOKEN_DECIMAL_INT) {
-            return std::make_unique<IntegerExpr>(primary_iter);
+            return std::make_unique<IntegerExpr>(
+                make_span(primary_iter),
+                primary_iter->lexeme
+            );
         }
 
         print_error(primary_iter, "Expected primary expression.");
@@ -1186,10 +1179,12 @@ private:
     }
 
     std::unique_ptr<Node> parse_argument_list(ExprRange args) {
-        auto arg_list = std::make_unique<ArgumentListExpr>();
-
         auto begin = std::get<0>(args);
         auto end   = std::get<1>(args);
+
+        auto arg_list = begin > end
+            ? std::make_unique<ArgumentListExpr>(SourceSpan{0, 0})
+            : std::make_unique<ArgumentListExpr>(make_span(args));
 
         if (begin > end) {
             return arg_list;
@@ -1243,7 +1238,8 @@ private:
         // x++ / x--
         if (begin < end && is_postfix_operator(end)) {
             auto postfix_node = std::make_unique<PostfixExpr>(
-                std::make_tuple(begin, end)
+                make_span(expr),
+                end->lexeme
             );
 
             postfix_node->add_child(
@@ -1260,8 +1256,8 @@ private:
             end->type == Lexer::TokenType::TOKEN_R_PARENTH)
         {
             auto call_node = std::make_unique<FuncCallExpr>(
-                begin,
-                std::make_tuple(begin + 1, end)
+                make_span(expr),
+                begin->lexeme
             );
 
             call_node->add_child(
@@ -1326,9 +1322,8 @@ private:
 
         auto node = std::make_unique<BinaryOperExpr>(
             "MultiplicativeExpr",
-            op_iter,
-            left_expr,
-            right_expr
+            make_span(expr),
+            op_iter->lexeme
         );
 
         node->add_child(parse_mul_expr(left_expr));
@@ -1355,9 +1350,8 @@ private:
 
         auto node = std::make_unique<BinaryOperExpr>(
             "AdditiveExpr",
-            op_iter,
-            left_expr,
-            right_expr
+            make_span(expr),
+            op_iter->lexeme
         );
 
         node->add_child(parse_add_expr(left_expr));
@@ -1386,9 +1380,8 @@ private:
 
         auto node = std::make_unique<BinaryOperExpr>(
             "RelationalExpr",
-            op_iter,
-            left_expr,
-            right_expr
+            make_span(expr),
+            op_iter->lexeme
         );
 
         node->add_child(parse_rel_expr(left_expr));
@@ -1415,9 +1408,8 @@ private:
 
         auto node = std::make_unique<BinaryOperExpr>(
             "EqualityExpr",
-            op_iter,
-            left_expr,
-            right_expr
+            make_span(expr),
+            op_iter->lexeme
         );
 
         node->add_child(parse_equality_expr(left_expr));
@@ -1443,9 +1435,8 @@ private:
 
         auto node = std::make_unique<BinaryOperExpr>(
             "LogicalAndExpr",
-            op_iter,
-            left_expr,
-            right_expr
+            make_span(expr),
+            op_iter->lexeme
         );
 
         node->add_child(parse_logical_and_expr(left_expr));
@@ -1471,9 +1462,8 @@ private:
 
         auto node = std::make_unique<BinaryOperExpr>(
             "LogicalOrExpr",
-            op_iter,
-            left_expr,
-            right_expr
+            make_span(expr),
+            op_iter->lexeme
         );
 
         node->add_child(parse_logical_or_expr(left_expr));
@@ -1502,7 +1492,10 @@ private:
                 auto left_expr  = std::make_tuple(begin, iter - 1);
                 auto right_expr = std::make_tuple(iter + 1, end);
 
-                auto node = std::make_unique<AssignmentExpr>(iter);
+                auto node = std::make_unique<AssignmentExpr>(
+                    make_span(expr),
+                    iter->lexeme
+                );
 
                 node->add_child(parse_postfix_expr(left_expr));
                 node->add_child(parse_assignment_expr(right_expr));
