@@ -15,6 +15,28 @@ struct SourceSpan {
     std::size_t end;
 };
 
+enum class NodeKind {
+    Program,
+    FunctionDef,
+    ParameterList,
+    Parameter,
+    CompoundStmt,
+    ExpressionStmt,
+    NullStmt,
+    IfStmt,
+    ForStmt,
+    ReturnStmt,
+    BreakStmt,
+    ContinueStmt,
+    IdentifierExpr,
+    IntegerExpr,
+    PostfixExpr,
+    FuncCallExpr,
+    ArgumentListExpr,
+    BinaryOperExpr,
+    AssignmentExpr
+};
+
 class Node {
 public:
     using TokenList = std::vector<Lexer::Token>;
@@ -24,10 +46,12 @@ public:
     std::vector<std::unique_ptr<Node>> children_nodes;
 
     std::string node_name;
+    NodeKind node_kind;
     SourceSpan span_;
 
     Node(
         std::string node_name,
+        NodeKind node_kind,
         Node* parent,
         std::vector<std::unique_ptr<Node>> children,
         SourceSpan span
@@ -35,6 +59,7 @@ public:
     : parent_node(parent),
       children_nodes(std::move(children)),
       node_name(std::move(node_name)),
+      node_kind(node_kind),
       span_(span)
     {}
 
@@ -52,7 +77,7 @@ public:
 class Program : public Node {
 public:
     Program(std::string node_name, SourceSpan span)
-    : Node(std::move(node_name), nullptr, {}, span)
+    : Node(std::move(node_name), NodeKind::Program, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -69,7 +94,7 @@ public:
         SourceSpan span,
         std::string function_id
     )
-    : Node(std::move(node_name), parent, {}, span),
+    : Node(std::move(node_name), NodeKind::FunctionDef, parent, {}, span),
       function_id_(std::move(function_id))
     {}
 
@@ -89,7 +114,7 @@ public:
         Node* parent_ptr,
         SourceSpan span
     )
-    : Node("ParameterList", parent_ptr, {}, span)
+    : Node("ParameterList", NodeKind::ParameterList, parent_ptr, {}, span)
     {}
 
     void print_node() override {
@@ -105,7 +130,7 @@ public:
         std::string type_name,
         std::string ident_name
     )
-    : Node("Parameter", nullptr, {}, span),
+    : Node("Parameter", NodeKind::Parameter, nullptr, {}, span),
       type_name_(std::move(type_name)),
       ident_name_(std::move(ident_name))
     {}
@@ -131,7 +156,7 @@ public:
         Node* parent_ptr,
         SourceSpan span
     )
-    : Node("CompoundStmt", parent_ptr, {}, span)
+    : Node("CompoundStmt", NodeKind::CompoundStmt, parent_ptr, {}, span)
     {}
 
     void print_node() override {
@@ -143,7 +168,7 @@ public:
 class ExpressionStmt : public Node {
 public:
     ExpressionStmt(SourceSpan span)
-    : Node("ExpressionStmt", nullptr, {}, span)
+    : Node("ExpressionStmt", NodeKind::ExpressionStmt, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -155,7 +180,7 @@ public:
 class NullStmt : public Node {
 public:
     NullStmt(SourceSpan span)
-    : Node("NullStmt", nullptr, {}, span)
+    : Node("NullStmt", NodeKind::NullStmt, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -170,7 +195,7 @@ public:
         SourceSpan span,
         bool has_else
     )
-    : Node("IfStmt", nullptr, {}, span),
+    : Node("IfStmt", NodeKind::IfStmt, nullptr, {}, span),
       has_else_(has_else)
     {}
 
@@ -190,7 +215,7 @@ public:
         bool has_cond,
         bool has_step
     )
-    : Node("ForStmt", nullptr, {}, span),
+    : Node("ForStmt", NodeKind::ForStmt, nullptr, {}, span),
       has_init_(has_init),
       has_cond_(has_cond),
       has_step_(has_step)
@@ -212,7 +237,7 @@ public:
         SourceSpan span,
         bool has_expr
     )
-    : Node("ReturnStmt", nullptr, {}, span),
+    : Node("ReturnStmt", NodeKind::ReturnStmt, nullptr, {}, span),
       has_expr_(has_expr)
     {}
 
@@ -227,7 +252,7 @@ private:
 class BreakStmt : public Node {
 public:
     BreakStmt(SourceSpan span)
-    : Node("BreakStmt", nullptr, {}, span)
+    : Node("BreakStmt", NodeKind::BreakStmt, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -239,7 +264,7 @@ public:
 class ContinueStmt : public Node {
 public:
     ContinueStmt(SourceSpan span)
-    : Node("ContinueStmt", nullptr, {}, span)
+    : Node("ContinueStmt", NodeKind::ContinueStmt, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -252,7 +277,7 @@ public:
 class IdentifierExpr : public Node {
 public:
     IdentifierExpr(SourceSpan span, std::string ident_name)
-    : Node("IdentifierExpr", nullptr, {}, span),
+    : Node("IdentifierExpr", NodeKind::IdentifierExpr, nullptr, {}, span),
       ident_name_(std::move(ident_name))
     {}
 
@@ -267,7 +292,7 @@ private:
 class IntegerExpr : public Node {
 public:
     IntegerExpr(SourceSpan span, std::string token_value)
-    : Node("IntegerExpr", nullptr, {}, span),
+    : Node("IntegerExpr", NodeKind::IntegerExpr, nullptr, {}, span),
       token_value_(std::move(token_value))
     {}
 
@@ -282,7 +307,7 @@ private:
 class PostfixExpr : public Node {
 public:
     PostfixExpr(SourceSpan span, std::string op_lexeme)
-    : Node("PostfixExpr", nullptr, {}, span),
+    : Node("PostfixExpr", NodeKind::PostfixExpr, nullptr, {}, span),
       op_lexeme_(std::move(op_lexeme))
     {}
 
@@ -300,7 +325,7 @@ public:
     FuncCallExpr(
         SourceSpan span,
         std::string func_name
-    ) : Node("FunctionCall", nullptr, {}, span),
+    ) : Node("FunctionCall", NodeKind::FuncCallExpr, nullptr, {}, span),
         func_name_(std::move(func_name))
     {}
 
@@ -315,7 +340,7 @@ private:
 class ArgumentListExpr : public Node {
 public:
     ArgumentListExpr(SourceSpan span)
-    : Node("ArgumentList", nullptr, {}, span)
+    : Node("ArgumentList", NodeKind::ArgumentListExpr, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -329,7 +354,7 @@ public:
         std::string node_name,
         SourceSpan span,
         std::string op_lexeme
-    ) : Node(node_name, nullptr, {}, span),
+    ) : Node(node_name, NodeKind::BinaryOperExpr, nullptr, {}, span),
         op_lexeme_(std::move(op_lexeme))
     {}
 
@@ -344,7 +369,7 @@ private:
 class AssignmentExpr : public Node {
 public:
     AssignmentExpr(SourceSpan span, std::string assign_lexeme)
-    : Node("AssignmentExpr", nullptr, {}, span),
+    : Node("AssignmentExpr", NodeKind::AssignmentExpr, nullptr, {}, span),
       assign_lexeme_(std::move(assign_lexeme))
     {}
 
