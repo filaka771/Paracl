@@ -225,6 +225,10 @@ public:
         std::cout << node_name << "\n";
     }
 
+    bool has_init() const {return has_init_;}
+    bool has_cond() const {return has_cond_;}
+    bool has_step() const {return has_step_;}
+
 private:
     bool has_init_;
     bool has_cond_;
