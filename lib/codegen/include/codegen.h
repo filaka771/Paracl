@@ -93,6 +93,125 @@ private:
         function_table_[function_id].param_count = param_count;
     }
 
+    void collect_compound_locals(
+        const CompoundStmt& compound_stmt,
+        FunctionContext& context
+    ) {
+        for (const auto& node : compound_stmt.children_nodes) {
+            collect_statement_locals(*node, context);
+        }
+    }
+
+    void collect_statement_locals(const Node& node, FunctionContext& context) {
+        switch (node.node_kind) {
+            case NodeKind::CompoundStmt:
+                collect_compound_locals(
+                    static_cast<const CompoundStmt&>(node),
+                    context
+                );
+                break;
+
+            case NodeKind::ExpressionStmt:
+                if (!node.children_nodes.empty()) {
+                    collect_expr_locals(*node.children_nodes[0], context);
+                }
+                break;
+
+            case NodeKind::IfStmt:
+                collect_expr_locals(*node.children_nodes[0], context);
+                collect_statement_locals(*node.children_nodes[1], context);
+
+                if (node.children_nodes.size() == 3) {
+                    collect_statement_locals(*node.children_nodes[2], context);
+                }
+                break;
+
+            case NodeKind::ForStmt: {
+                const auto& for_stmt = static_cast<const ForStmt&>(node);
+                std::size_t child_index = 0;
+
+                if (for_stmt.has_init()) {
+                    collect_expr_locals(*node.children_nodes[child_index++], context);
+                }
+
+                if (for_stmt.has_cond()) {
+                    collect_expr_locals(*node.children_nodes[child_index++], context);
+                }
+
+                if (for_stmt.has_step()) {
+                    collect_expr_locals(*node.children_nodes[child_index++], context);
+                }
+
+                collect_statement_locals(*node.children_nodes[child_index], context);
+                break;
+            }
+
+            case NodeKind::ReturnStmt:
+                if (!node.children_nodes.empty()) {
+                    collect_expr_locals(*node.children_nodes[0], context);
+                }
+                break;
+
+            case NodeKind::NullStmt:
+            case NodeKind::BreakStmt:
+            case NodeKind::ContinueStmt:
+                break;
+
+            default:
+                print_error(node, "Unexpected statement node.");
+                throw std::runtime_error("Unexpected statement node");
+        }
+    }
+
+    void collect_expr_locals(const Node& node, FunctionContext& context) {
+        switch (node.node_kind) {
+            case NodeKind::AssignmentExpr: {
+                const std::string& identifier =
+                    get_identifier_name(*node.children_nodes[0]);
+
+                if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
+                    context.next_offset += 8;
+                    context.symbol_table[identifier] = context.next_offset;
+                }
+
+                collect_expr_locals(*node.children_nodes[1], context);
+                break;
+            }
+
+            case NodeKind::PostfixExpr: {
+                const std::string& identifier =
+                    get_identifier_name(*node.children_nodes[0]);
+
+                if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
+                    context.next_offset += 8;
+                    context.symbol_table[identifier] = context.next_offset;
+                }
+                break;
+            }
+
+            case NodeKind::BinaryOperExpr:
+                collect_expr_locals(*node.children_nodes[0], context);
+                collect_expr_locals(*node.children_nodes[1], context);
+                break;
+
+            case NodeKind::FuncCallExpr:
+                if (!node.children_nodes.empty()) {
+                    for (const auto& child : node.children_nodes[0]->children_nodes) {
+                        collect_expr_locals(*child, context);
+                    }
+                }
+                break;
+
+            case NodeKind::IdentifierExpr:
+            case NodeKind::IntegerExpr:
+                break;
+
+            default:
+                print_error(node, "Unexpected expression node.");
+                throw std::runtime_error("Unexpected expression node");
+        }
+    }
+
     void emit_program(const Program& program) {
         asm_file_ << "format ELF64 executable 3\n";
         asm_file_ << "entry _start\n" << "\n";
@@ -111,12 +230,19 @@ private:
         const auto* compound_stmt =
             static_cast<CompoundStmt*>(function_def.children_nodes[1].get());
 
+        collect_compound_locals(*compound_stmt, context);
+
         asm_file_ << function_label << ":\n";
         asm_file_ << "push rbp\n";
         asm_file_ << "mov rbp, rsp\n";
 
+        if (context.next_offset != 0) {
+            asm_file_ << "sub rsp, " << context.next_offset << "\n";
+        }
+
         emit_compound_stmt(*compound_stmt, context);
     }
+
 
     void emit_compound_stmt(
         const CompoundStmt& compound_stmt,
@@ -371,8 +497,8 @@ private:
         const std::string& identifier = get_identifier_name(*ident);
 
         if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
-            context.next_offset += 8;
-            context.symbol_table[identifier] = context.next_offset;
+            print_error(assignment_expr, "Undefined identifier.");
+            throw std::runtime_error("Undefined identifier.");
         }
 
         emit_expr(*assignment_expr.children_nodes[1], context);
