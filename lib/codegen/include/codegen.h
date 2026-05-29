@@ -26,6 +26,11 @@ private:
     struct FunctionContext {
         std::unordered_map<std::string, std::size_t> symbol_table;
         std::size_t next_offset = 0;
+        std::size_t if_count = 0;
+        std::size_t for_count = 0;
+
+        std::vector<std::string> break_labels;
+        std::vector<std::string> continue_labels;
     };
 
     std::ofstream asm_file_;
@@ -172,15 +177,130 @@ private:
 
     void emit_null_stmt(const NullStmt&, FunctionContext&) {}
 
-    void emit_if_stmt(const IfStmt&, FunctionContext&) {}
+    void emit_if_stmt(const IfStmt& if_stmt, FunctionContext& context) {
+        const std::size_t if_id = context.if_count;
+        context.if_count++;
 
-    void emit_for_stmt(const ForStmt&, FunctionContext&) {}
+        const Node& condition = *if_stmt.children_nodes[0];
+        const Node& then_stmt = *if_stmt.children_nodes[1];
 
-    void emit_return_stmt(const ReturnStmt&, FunctionContext&) {}
+        const bool has_else = if_stmt.children_nodes.size() == 3;
 
-    void emit_break_stmt(const BreakStmt&, FunctionContext&) {}
+        emit_expr(condition, context);
+        asm_file_ << "pop rax\n";
+        asm_file_ << "cmp rax, 0\n";
 
-    void emit_continue_stmt(const ContinueStmt&, FunctionContext&) {}
+        if (has_else) {
+            asm_file_ << "je _else_" << if_id << "\n";
+            emit_statement(then_stmt, context);
+            asm_file_ << "jmp _ifend_" << if_id << "\n";
+            asm_file_ << "_else_" << if_id << ":\n";
+
+            const Node& else_stmt = *if_stmt.children_nodes[2];
+            emit_statement(else_stmt, context);
+
+            asm_file_ << "_ifend_" << if_id << ":\n";
+        }
+        else {
+            asm_file_ << "je _ifend_" << if_id << "\n";
+            emit_statement(then_stmt, context);
+            asm_file_ << "_ifend_" << if_id << ":\n";
+        }
+    }
+
+    void emit_for_stmt(const ForStmt& for_stmt, FunctionContext& context) {
+        const std::size_t for_id = context.for_count;
+        context.for_count++;
+
+        const std::string loop_begin = "_for_begin_" + std::to_string(for_id);
+        const std::string loop_step = "_for_step_" + std::to_string(for_id);
+        const std::string loop_end = "_for_end_" + std::to_string(for_id);
+
+        std::size_t child_index = 0;
+
+        const Node* init_expr = nullptr;
+        const Node* cond_expr = nullptr;
+        const Node* step_expr = nullptr;
+
+        if (for_stmt.has_init()) {
+            init_expr = for_stmt.children_nodes[child_index++].get();
+        }
+
+        if (for_stmt.has_cond()) {
+            cond_expr = for_stmt.children_nodes[child_index++].get();
+        }
+
+        if (for_stmt.has_step()) {
+            step_expr = for_stmt.children_nodes[child_index++].get();
+        }
+
+        const Node* body_stmt = for_stmt.children_nodes[child_index].get();
+
+        if (init_expr != nullptr) {
+            emit_expr(*init_expr, context);
+            asm_file_ << "add rsp, 8\n";
+        }
+
+        asm_file_ << loop_begin << ":\n";
+
+        if (cond_expr != nullptr) {
+            emit_expr(*cond_expr, context);
+            asm_file_ << "pop rax\n";
+            asm_file_ << "cmp rax, 0\n";
+            asm_file_ << "je " << loop_end << "\n";
+        }
+
+        context.break_labels.push_back(loop_end);
+        context.continue_labels.push_back(loop_step);
+
+        emit_statement(*body_stmt, context);
+
+        context.continue_labels.pop_back();
+        context.break_labels.pop_back();
+
+        asm_file_ << loop_step << ":\n";
+
+        if (step_expr != nullptr) {
+            emit_expr(*step_expr, context);
+            asm_file_ << "add rsp, 8\n";
+        }
+
+        asm_file_ << "jmp " << loop_begin << "\n";
+        asm_file_ << loop_end << ":\n";
+    }
+
+    void emit_return_stmt(const ReturnStmt& return_stmt, FunctionContext& context) {
+        if (!return_stmt.children_nodes.empty()) {
+            const auto* expr = return_stmt.children_nodes[0].get();
+            emit_expr(*expr, context);
+
+            // assume emit_expr leaves result on top of stack
+            asm_file_ << "pop rax\n";
+        }
+
+        asm_file_ << "mov rsp, rbp\n";
+        asm_file_ << "pop rbp\n";
+        asm_file_ << "ret\n";
+    }
+
+    void emit_break_stmt(const BreakStmt& break_stmt, FunctionContext& context) {
+        if (context.break_labels.empty()) {
+            print_error(break_stmt, "Unexpected 'break' outside loop.");
+            throw std::runtime_error("Unexpected break outside loop");
+        }
+
+        asm_file_ << "jmp " << context.break_labels.back() << "\n";
+    }
+
+    void emit_continue_stmt(const ContinueStmt& continue_stmt, FunctionContext&
+    context) {
+        if (context.continue_labels.empty()) {
+            print_error(continue_stmt, "Unexpected 'continue' outside loop.");
+            throw std::runtime_error("Unexpected continue outside loop");
+        }
+
+        asm_file_ << "jmp " << context.continue_labels.back() << "\n";
+    }
 
     void emit_expression_stmt(
         const ExpressionStmt& expression_stmt,
@@ -244,10 +364,7 @@ private:
         }
     }
 
-    void emit_assignment_expr(
-        const AssignmentExpr& assignment_expr,
-        FunctionContext& context
-    ) {
+    void emit_assignment_expr(const AssignmentExpr& assignment_expr, FunctionContext& context) {
         const auto* ident =
             static_cast<const IdentifierExpr*>(assignment_expr.children_nodes[0].get());
 
@@ -259,14 +376,153 @@ private:
         }
     }
 
-    void emit_postfix_expr(const PostfixExpr&, FunctionContext&) {}
+    void emit_postfix_expr(const PostfixExpr& postfix_expr, FunctionContext&
+    context) {
+        const std::string& identifier =
+            get_identifier_name(*postfix_expr.children_nodes[0].get());
+
+        auto iter = context.symbol_table.find(identifier);
+
+        if (iter == context.symbol_table.end()) {
+            print_error(postfix_expr, "Undefined identifier.");
+            throw std::runtime_error("Undefined identifier.");
+        }
+
+        const std::string& op_lexeme =
+            parse_result_.token_list[postfix_expr.span_.end].lexeme;
+
+        asm_file_ << "push qword [rbp - " << iter->second << "]\n";
+
+        if (op_lexeme == "++") {
+            asm_file_ << "inc qword [rbp - " << iter->second << "]\n";
+        }
+        else if (op_lexeme == "--") {
+            asm_file_ << "dec qword [rbp - " << iter->second << "]\n";
+        }
+        else {
+            print_error(postfix_expr, "Unsupported postfix operator.");
+            throw std::runtime_error("Unsupported postfix operator.");
+        }
+    }
 
     void emit_func_call_expr(const FuncCallExpr&, FunctionContext&) {}
 
-    void emit_binary_expr(const BinaryOperExpr&, FunctionContext&) {}
+    void emit_binary_expr(const BinaryOperExpr& binary_expr,
+                          FunctionContext&context
+    ) {
+        const auto* left_expr = binary_expr.children_nodes[0].get();
+        const auto* right_expr = binary_expr.children_nodes[1].get();
 
-    void emit_identifier_expr(const IdentifierExpr&, FunctionContext&) {}
+        emit_expr(*left_expr, context);
+        emit_expr(*right_expr, context);
 
-    void emit_integer_expr(const IntegerExpr&, FunctionContext&) {}
+        asm_file_ << "pop rbx\n";
+        asm_file_ << "pop rax\n";
 
+        const std::string op =
+            parse_result_.token_list[binary_expr.span_.begin].lexeme;
+
+        if (binary_expr.node_name == "AdditiveExpr") {
+            if (op == "+") {
+                asm_file_ << "add rax, rbx\n";
+            }
+            else if (op == "-") {
+                asm_file_ << "sub rax, rbx\n";
+            }
+        }
+        else if (binary_expr.node_name == "MultiplicativeExpr") {
+            if (op == "*") {
+                asm_file_ << "imul rax, rbx\n";
+            }
+            else if (op == "/") {
+                asm_file_ << "cqo\n";
+                asm_file_ << "idiv rbx\n";
+            }
+            else if (op == "%") {
+                asm_file_ << "cqo\n";
+                asm_file_ << "idiv rbx\n";
+                asm_file_ << "mov rax, rdx\n";
+            }
+        }
+        else if (binary_expr.node_name == "RelationalExpr") {
+            asm_file_ << "cmp rax, rbx\n";
+
+            if (op == ">") {
+                asm_file_ << "setg al\n";
+            }
+            else if (op == ">=") {
+                asm_file_ << "setge al\n";
+            }
+            else if (op == "<") {
+                asm_file_ << "setl al\n";
+            }
+            else if (op == "<=") {
+                asm_file_ << "setle al\n";
+            }
+
+            asm_file_ << "movzx rax, al\n";
+        }
+        else if (binary_expr.node_name == "EqualityExpr") {
+            asm_file_ << "cmp rax, rbx\n";
+
+            if (op == "==") {
+                asm_file_ << "sete al\n";
+            }
+            else if (op == "!=") {
+                asm_file_ << "setne al\n";
+            }
+
+            asm_file_ << "movzx rax, al\n";
+        }
+        else if (binary_expr.node_name == "LogicalAndExpr") {
+            asm_file_ << "cmp rax, 0\n";
+            asm_file_ << "setne al\n";
+            asm_file_ << "movzx rax, al\n";
+            asm_file_ << "cmp rbx, 0\n";
+            asm_file_ << "setne bl\n";
+            asm_file_ << "movzx rbx, bl\n";
+            asm_file_ << "and rax, rbx\n";
+        }
+        else if (binary_expr.node_name == "LogicalOrExpr") {
+            asm_file_ << "cmp rax, 0\n";
+            asm_file_ << "setne al\n";
+            asm_file_ << "movzx rax, al\n";
+            asm_file_ << "cmp rbx, 0\n";
+            asm_file_ << "setne bl\n";
+            asm_file_ << "movzx rbx, bl\n";
+            asm_file_ << "or rax, rbx\n";
+        }
+        else {
+            print_error(binary_expr, "Unsupported binary expression.");
+            throw std::runtime_error("Unsupported binary expression");
+        }
+
+        asm_file_ << "push rax\n";
+    }
+
+    void emit_identifier_expr(const IdentifierExpr& identifier_expr,
+                                FunctionContext& context) {
+        const std::string& identifier = get_identifier_name(identifier_expr);
+
+        auto iter = context.symbol_table.find(identifier);
+        if (iter != context.symbol_table.end()) {
+            asm_file_ << "push qword [rbp - " << iter->second << "]\n";
+        }
+        else {
+            print_error(identifier_expr, "Undefined identifier.");
+            throw std::runtime_error("Undefined identifier.");
+        }
+    }
+
+  void emit_integer_expr(const IntegerExpr& integer_expr,
+                         FunctionContext& context) {
+      (void)context;
+
+      const std::string& lexeme =
+          parse_result_.token_list[integer_expr.span_.begin].lexeme;
+
+      const int int_value = std::stoi(lexeme);
+
+      asm_file_ << "push " << int_value << "\n";
+  }
 };
