@@ -337,6 +337,8 @@ public:
         std::cout << "FunctionCall " << func_name_ << "\n";
     }
 
+    const std::string& get_func_name() const {return func_name_;}
+
 private:
     std::string func_name_;
 };
@@ -365,6 +367,8 @@ public:
     void print_node() override {
         std::cout << node_name << " \"" << op_lexeme_ << "\"\n";
     }
+
+    const std::string& get_op_lexeme() const {return op_lexeme_;}
 
 private:
     std::string op_lexeme_;
