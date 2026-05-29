@@ -4,6 +4,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <stdexcept>
+#include <vector>
 
 #include "../../parser/include/parser.h"
 
@@ -273,8 +274,6 @@ private:
         if (!return_stmt.children_nodes.empty()) {
             const auto* expr = return_stmt.children_nodes[0].get();
             emit_expr(*expr, context);
-
-            // assume emit_expr leaves result on top of stack
             asm_file_ << "pop rax\n";
         }
 
@@ -312,6 +311,7 @@ private:
 
         const auto* expression = expression_stmt.children_nodes[0].get();
         emit_expr(*expression, context);
+        asm_file_ << "add rsp, 8\n";
     }
 
     void emit_expr(const Node& expression, FunctionContext& context) {
@@ -374,6 +374,11 @@ private:
             context.next_offset += 8;
             context.symbol_table[identifier] = context.next_offset;
         }
+
+        emit_expr(*assignment_expr.children_nodes[1], context);
+        asm_file_ << "pop rax\n";
+        asm_file_ << "mov qword [rbp - " << context.symbol_table.at(identifier) << "], rax\n";
+        asm_file_ << "push rax\n";
     }
 
     void emit_postfix_expr(const PostfixExpr& postfix_expr, FunctionContext&
@@ -405,7 +410,43 @@ private:
         }
     }
 
-    void emit_func_call_expr(const FuncCallExpr&, FunctionContext&) {}
+    void emit_func_call_expr(
+        const FuncCallExpr& func_call_expr,
+        FunctionContext& context
+    ) {
+        const std::string& function_id = func_call_expr.get_func_name();
+        auto iter = function_table_.find(function_id);
+
+        if (iter == function_table_.end()) {
+            print_error(func_call_expr, "Undefined function.");
+            throw std::runtime_error("Undefined function");
+        }
+
+        const auto* arg_list =
+            static_cast<const ArgumentListExpr*>(func_call_expr.children_nodes[0].get());
+
+        const std::size_t arg_count = arg_list->children_nodes.size();
+
+        if (arg_count != iter->second.param_count) {
+            print_error(func_call_expr, "Invalid count of arguments.");
+            throw std::runtime_error("Invalid count of arguments");
+        }
+
+        for (auto arg_iter = arg_list->children_nodes.rbegin();
+             arg_iter != arg_list->children_nodes.rend();
+             ++arg_iter)
+        {
+            emit_expr(**arg_iter, context);
+        }
+
+        asm_file_ << "call " << iter->second.function_label << "\n";
+
+        if (arg_count > 0) {
+            asm_file_ << "add rsp, " << arg_count * 8 << "\n";
+        }
+
+        asm_file_ << "push rax\n";
+    }
 
     void emit_binary_expr(const BinaryOperExpr& binary_expr,
                           FunctionContext&context
@@ -419,8 +460,7 @@ private:
         asm_file_ << "pop rbx\n";
         asm_file_ << "pop rax\n";
 
-        const std::string op =
-            parse_result_.token_list[binary_expr.span_.begin].lexeme;
+        const std::string& op = binary_expr.get_op_lexeme();
 
         if (binary_expr.node_name == "AdditiveExpr") {
             if (op == "+") {
@@ -516,8 +556,6 @@ private:
 
   void emit_integer_expr(const IntegerExpr& integer_expr,
                          FunctionContext& context) {
-      (void)context;
-
       const std::string& lexeme =
           parse_result_.token_list[integer_expr.span_.begin].lexeme;
 
