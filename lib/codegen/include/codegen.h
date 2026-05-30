@@ -62,6 +62,10 @@ private:
         }
     }
 
+    void discard_expr_result() {
+        asm_file_ << "add rsp, 8\n";
+    }
+
     //-----------------Functions-----------------
     void collect_program(const Program& program) {
         for (const auto& child : program.children_nodes) {
@@ -399,7 +403,7 @@ private:
 
         if (init_expr != nullptr) {
             emit_expr(*init_expr, context);
-            asm_file_ << "add rsp, 8\n";
+            discard_expr_result();
         }
 
         asm_file_ << loop_begin << ":\n";
@@ -423,7 +427,7 @@ private:
 
         if (step_expr != nullptr) {
             emit_expr(*step_expr, context);
-            asm_file_ << "add rsp, 8\n";
+            discard_expr_result();
         }
 
         asm_file_ << "jmp " << loop_begin << "\n";
@@ -471,9 +475,11 @@ private:
 
         const auto* expression = expression_stmt.children_nodes[0].get();
         emit_expr(*expression, context);
-        asm_file_ << "add rsp, 8\n";
+        discard_expr_result();
     }
 
+    // Expression convention:
+    // every emit_*_expr method must leave exactly one result value on stack.
     void emit_expr(const Node& expression, FunctionContext& context) {
         switch (expression.node_kind) {
             case NodeKind::AssignmentExpr:
