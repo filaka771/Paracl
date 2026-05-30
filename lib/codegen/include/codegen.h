@@ -24,8 +24,13 @@ private:
         std::string function_label;
     };
 
+    struct SymbolInfo {
+        std::size_t offset;
+        bool is_param;
+    };
+
     struct FunctionContext {
-        std::unordered_map<std::string, std::size_t> symbol_table;
+        std::unordered_map<std::string, SymbolInfo> symbol_table;
         std::size_t next_offset = 0;
         std::size_t if_count = 0;
         std::size_t for_count = 0;
@@ -91,6 +96,25 @@ private:
                           const std::string& function_id) {
         const std::size_t param_count = parameter_list.children_nodes.size();
         function_table_[function_id].param_count = param_count;
+    }
+
+    void collect_parameters(
+        const ParameterList& parameter_list,
+        FunctionContext& context
+    ) {
+        std::size_t param_offset = 16;
+
+        for (const auto& child : parameter_list.children_nodes) {
+            const std::string& identifier =
+                parse_result_.token_list[child->span_.end].lexeme;
+
+            context.symbol_table[identifier] = SymbolInfo{
+                param_offset,
+                true
+            };
+
+            param_offset += 8;
+        }
     }
 
     void collect_compound_locals(
@@ -171,7 +195,10 @@ private:
 
                 if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
                     context.next_offset += 8;
-                    context.symbol_table[identifier] = context.next_offset;
+                    context.symbol_table[identifier] = SymbolInfo{
+                        context.next_offset,
+                        false
+                    };
                 }
 
                 collect_expr_locals(*node.children_nodes[1], context);
@@ -184,7 +211,10 @@ private:
 
                 if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
                     context.next_offset += 8;
-                    context.symbol_table[identifier] = context.next_offset;
+                    context.symbol_table[identifier] = SymbolInfo{
+                        context.next_offset,
+                        false
+                    };
                 }
                 break;
             }
@@ -227,9 +257,13 @@ private:
         const std::string& function_label =
             function_table_.at(function_def.get_function_id()).function_label;
 
+        const auto* param_list =
+            static_cast<ParameterList*>(function_def.children_nodes[0].get());
+
         const auto* compound_stmt =
             static_cast<CompoundStmt*>(function_def.children_nodes[1].get());
 
+        collect_parameters(*param_list, context);
         collect_compound_locals(*compound_stmt, context);
 
         asm_file_ << function_label << ":\n";
@@ -503,7 +537,15 @@ private:
 
         emit_expr(*assignment_expr.children_nodes[1], context);
         asm_file_ << "pop rax\n";
-        asm_file_ << "mov qword [rbp - " << context.symbol_table.at(identifier) << "], rax\n";
+        const auto symbol_info = context.symbol_table.at(identifier);
+
+        if (symbol_info.is_param) {
+            asm_file_ << "mov qword [rbp + " << symbol_info.offset << "], rax\n";
+        }
+        else {
+            asm_file_ << "mov qword [rbp - " << symbol_info.offset << "], rax\n";
+        }
+
         asm_file_ << "push rax\n";
     }
 
@@ -522,13 +564,28 @@ private:
         const std::string& op_lexeme =
             parse_result_.token_list[postfix_expr.span_.end].lexeme;
 
-        asm_file_ << "push qword [rbp - " << iter->second << "]\n";
+        if (iter->second.is_param) {
+            asm_file_ << "push qword [rbp + " << iter->second.offset << "]\n";
+        }
+        else {
+            asm_file_ << "push qword [rbp - " << iter->second.offset << "]\n";
+        }
 
         if (op_lexeme == "++") {
-            asm_file_ << "inc qword [rbp - " << iter->second << "]\n";
+            if (iter->second.is_param) {
+                asm_file_ << "inc qword [rbp + " << iter->second.offset << "]\n";
+            }
+            else {
+                asm_file_ << "inc qword [rbp - " << iter->second.offset << "]\n";
+            }
         }
         else if (op_lexeme == "--") {
-            asm_file_ << "dec qword [rbp - " << iter->second << "]\n";
+            if (iter->second.is_param) {
+                asm_file_ << "dec qword [rbp + " << iter->second.offset << "]\n";
+            }
+            else {
+                asm_file_ << "dec qword [rbp - " << iter->second.offset << "]\n";
+            }
         }
         else {
             print_error(postfix_expr, "Unsupported postfix operator.");
@@ -672,7 +729,12 @@ private:
 
         auto iter = context.symbol_table.find(identifier);
         if (iter != context.symbol_table.end()) {
-            asm_file_ << "push qword [rbp - " << iter->second << "]\n";
+            if (iter->second.is_param) {
+                asm_file_ << "push qword [rbp + " << iter->second.offset << "]\n";
+            }
+            else {
+                asm_file_ << "push qword [rbp - " << iter->second.offset << "]\n";
+            }
         }
         else {
             print_error(identifier_expr, "Undefined identifier.");
