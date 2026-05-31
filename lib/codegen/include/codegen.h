@@ -140,7 +140,7 @@ private:
         // Add new function declaration in the function table
         if(function_table_.find(function_id) == function_table_.end()) {
             if(function_id == "main")
-                function_table_[function_id].function_label = "start_";
+                function_table_[function_id].function_label = "_start";
             else 
                 function_table_[function_id].function_label = "_int_" + function_id;
             // Calculate number of arguments
