@@ -29,14 +29,17 @@ private:
         bool is_param;
     };
 
-    struct FunctionContext {
+    struct ScopeContext {
         std::unordered_map<std::string, SymbolInfo> symbol_table;
+    };
+
+    struct FunctionContext {
+        std::vector<ScopeContext> scopes;
         std::size_t next_offset = 0;
         std::size_t if_count = 0;
         std::size_t for_count = 0;
         std::string function_end_label;
         std::string function_fallthrough_label;
-
         std::vector<std::string> break_labels;
         std::vector<std::string> continue_labels;
     };
@@ -66,6 +69,61 @@ private:
 
     void discard_expr_result() {
         asm_file_ << "add rsp, 8\n";
+    }
+
+    void push_scope(FunctionContext& context) {
+        context.scopes.emplace_back();
+    }
+
+    void pop_scope(FunctionContext& context) {
+        if (context.scopes.empty()) {
+            throw std::runtime_error("No scope to pop");
+        }
+
+        context.scopes.pop_back();
+    }
+
+    SymbolInfo* find_symbol(FunctionContext& context, const std::string& identifier) {
+        for (auto iter = context.scopes.rbegin();
+             iter != context.scopes.rend();
+             ++iter)
+        {
+            auto symbol_iter = iter->symbol_table.find(identifier);
+            if (symbol_iter != iter->symbol_table.end()) {
+                return &symbol_iter->second;
+            }
+        }
+
+        return nullptr;
+    }
+
+    const SymbolInfo* find_symbol(
+        const FunctionContext& context,
+        const std::string& identifier
+    ) const {
+        for (auto iter = context.scopes.rbegin();
+             iter != context.scopes.rend();
+             ++iter)
+        {
+            auto symbol_iter = iter->symbol_table.find(identifier);
+            if (symbol_iter != iter->symbol_table.end()) {
+                return &symbol_iter->second;
+            }
+        }
+
+        return nullptr;
+    }
+
+    void add_symbol_to_current_scope(
+        FunctionContext& context,
+        const std::string& identifier,
+        SymbolInfo symbol_info
+    ) {
+        if (context.scopes.empty()) {
+            throw std::runtime_error("No active scope");
+        }
+
+        context.scopes.back().symbol_table[identifier] = symbol_info;
     }
 
     //-----------------Functions-----------------
@@ -114,10 +172,14 @@ private:
             const std::string& identifier =
                 parse_result_.token_list[child->span_.end].lexeme;
 
-            context.symbol_table[identifier] = SymbolInfo{
-                param_offset,
-                true
-            };
+            add_symbol_to_current_scope(
+                context,
+                identifier,
+                SymbolInfo{
+                    param_offset,
+                    true
+                }
+            );
 
             param_offset += 8;
         }
@@ -127,9 +189,13 @@ private:
         const CompoundStmt& compound_stmt,
         FunctionContext& context
     ) {
+        push_scope(context);
+
         for (const auto& node : compound_stmt.children_nodes) {
             collect_statement_locals(*node, context);
         }
+
+        pop_scope(context);
     }
 
     void collect_statement_locals(const Node& node, FunctionContext& context) {
@@ -199,12 +265,16 @@ private:
                 const std::string& identifier =
                     get_identifier_name(*node.children_nodes[0]);
 
-                if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
+                if (find_symbol(context, identifier) == nullptr) {
                     context.next_offset += 8;
-                    context.symbol_table[identifier] = SymbolInfo{
-                        context.next_offset,
-                        false
-                    };
+                    add_symbol_to_current_scope(
+                        context,
+                        identifier,
+                        SymbolInfo{
+                            context.next_offset,
+                            false
+                        }
+                    );
                 }
 
                 collect_expr_locals(*node.children_nodes[1], context);
@@ -215,12 +285,16 @@ private:
                 const std::string& identifier =
                     get_identifier_name(*node.children_nodes[0]);
 
-                if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
+                if (find_symbol(context, identifier) == nullptr) {
                     context.next_offset += 8;
-                    context.symbol_table[identifier] = SymbolInfo{
-                        context.next_offset,
-                        false
-                    };
+                    add_symbol_to_current_scope(
+                        context,
+                        identifier,
+                        SymbolInfo{
+                            context.next_offset,
+                            false
+                        }
+                    );
                 }
                 break;
             }
@@ -271,6 +345,7 @@ private:
         const auto* compound_stmt =
             static_cast<CompoundStmt*>(function_def.children_nodes[1].get());
 
+        push_scope(context);
         collect_parameters(*param_list, context);
         collect_compound_locals(*compound_stmt, context);
 
@@ -296,9 +371,13 @@ private:
         const CompoundStmt& compound_stmt,
         FunctionContext& context
     ) {
+        push_scope(context);
+
         for (const auto& node : compound_stmt.children_nodes) {
             emit_statement(*node, context);
         }
+
+        pop_scope(context);
     }
 
     void emit_statement(const Node& node, FunctionContext& context) {
@@ -543,21 +622,21 @@ private:
             static_cast<const IdentifierExpr*>(assignment_expr.children_nodes[0].get());
 
         const std::string& identifier = get_identifier_name(*ident);
+        const auto* symbol_info = find_symbol(context, identifier);
 
-        if (context.symbol_table.find(identifier) == context.symbol_table.end()) {
+        if (symbol_info == nullptr) {
             print_error(assignment_expr, "Undefined identifier.");
             throw std::runtime_error("Undefined identifier.");
         }
 
         emit_expr(*assignment_expr.children_nodes[1], context);
         asm_file_ << "pop rax\n";
-        const auto symbol_info = context.symbol_table.at(identifier);
 
-        if (symbol_info.is_param) {
-            asm_file_ << "mov qword [rbp + " << symbol_info.offset << "], rax\n";
+        if (symbol_info->is_param) {
+            asm_file_ << "mov qword [rbp + " << symbol_info->offset << "], rax\n";
         }
         else {
-            asm_file_ << "mov qword [rbp - " << symbol_info.offset << "], rax\n";
+            asm_file_ << "mov qword [rbp - " << symbol_info->offset << "], rax\n";
         }
 
         asm_file_ << "push rax\n";
@@ -568,9 +647,9 @@ private:
         const std::string& identifier =
             get_identifier_name(*postfix_expr.children_nodes[0].get());
 
-        auto iter = context.symbol_table.find(identifier);
+        const auto* symbol_info = find_symbol(context, identifier);
 
-        if (iter == context.symbol_table.end()) {
+        if (symbol_info == nullptr) {
             print_error(postfix_expr, "Undefined identifier.");
             throw std::runtime_error("Undefined identifier.");
         }
@@ -578,27 +657,27 @@ private:
         const std::string& op_lexeme =
             parse_result_.token_list[postfix_expr.span_.end].lexeme;
 
-        if (iter->second.is_param) {
-            asm_file_ << "push qword [rbp + " << iter->second.offset << "]\n";
+        if (symbol_info->is_param) {
+            asm_file_ << "push qword [rbp + " << symbol_info->offset << "]\n";
         }
         else {
-            asm_file_ << "push qword [rbp - " << iter->second.offset << "]\n";
+            asm_file_ << "push qword [rbp - " << symbol_info->offset << "]\n";
         }
 
         if (op_lexeme == "++") {
-            if (iter->second.is_param) {
-                asm_file_ << "inc qword [rbp + " << iter->second.offset << "]\n";
+            if (symbol_info->is_param) {
+                asm_file_ << "inc qword [rbp + " << symbol_info->offset << "]\n";
             }
             else {
-                asm_file_ << "inc qword [rbp - " << iter->second.offset << "]\n";
+                asm_file_ << "inc qword [rbp - " << symbol_info->offset << "]\n";
             }
         }
         else if (op_lexeme == "--") {
-            if (iter->second.is_param) {
-                asm_file_ << "dec qword [rbp + " << iter->second.offset << "]\n";
+            if (symbol_info->is_param) {
+                asm_file_ << "dec qword [rbp + " << symbol_info->offset << "]\n";
             }
             else {
-                asm_file_ << "dec qword [rbp - " << iter->second.offset << "]\n";
+                asm_file_ << "dec qword [rbp - " << symbol_info->offset << "]\n";
             }
         }
         else {
@@ -741,13 +820,14 @@ private:
                                 FunctionContext& context) {
         const std::string& identifier = get_identifier_name(identifier_expr);
 
-        auto iter = context.symbol_table.find(identifier);
-        if (iter != context.symbol_table.end()) {
-            if (iter->second.is_param) {
-                asm_file_ << "push qword [rbp + " << iter->second.offset << "]\n";
+        const auto* symbol_info = find_symbol(context, identifier);
+
+        if (symbol_info != nullptr) {
+            if (symbol_info->is_param) {
+                asm_file_ << "push qword [rbp + " << symbol_info->offset << "]\n";
             }
             else {
-                asm_file_ << "push qword [rbp - " << iter->second.offset << "]\n";
+                asm_file_ << "push qword [rbp - " << symbol_info->offset << "]\n";
             }
         }
         else {
