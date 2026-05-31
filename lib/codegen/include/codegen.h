@@ -34,6 +34,8 @@ private:
         std::size_t next_offset = 0;
         std::size_t if_count = 0;
         std::size_t for_count = 0;
+        std::string function_end_label;
+        std::string function_fallthrough_label;
 
         std::vector<std::string> break_labels;
         std::vector<std::string> continue_labels;
@@ -260,6 +262,8 @@ private:
         FunctionContext context;
         const std::string& function_label =
             function_table_.at(function_def.get_function_id()).function_label;
+        context.function_end_label = function_label + "_end";
+        context.function_fallthrough_label = function_label + "_fallthrough";
 
         const auto* param_list =
             static_cast<ParameterList*>(function_def.children_nodes[0].get());
@@ -279,6 +283,12 @@ private:
         }
 
         emit_compound_stmt(*compound_stmt, context);
+        asm_file_ << context.function_fallthrough_label << ":\n";
+        asm_file_ << "ud2\n";
+        asm_file_ << context.function_end_label << ":\n";
+        asm_file_ << "mov rsp, rbp\n";
+        asm_file_ << "pop rbp\n";
+        asm_file_ << "ret\n";
     }
 
 
@@ -441,9 +451,7 @@ private:
             asm_file_ << "pop rax\n";
         }
 
-        asm_file_ << "mov rsp, rbp\n";
-        asm_file_ << "pop rbp\n";
-        asm_file_ << "ret\n";
+        asm_file_ << "jmp " << context.function_end_label << "\n";
     }
 
     void emit_break_stmt(const BreakStmt& break_stmt, FunctionContext& context) {
