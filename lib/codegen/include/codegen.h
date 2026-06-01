@@ -139,10 +139,7 @@ private:
         const std::string& function_id = function_def.get_function_id();
         // Add new function declaration in the function table
         if(function_table_.find(function_id) == function_table_.end()) {
-            if(function_id == "main")
-                function_table_[function_id].function_label = "_start";
-            else 
-                function_table_[function_id].function_label = "_int_" + function_id;
+            function_table_[function_id].function_label = "_int_" + function_id;
             // Calculate number of arguments
             const auto* param_list =
                 static_cast<ParameterList*>(function_def.children_nodes[0].get());
@@ -325,6 +322,12 @@ private:
     void emit_program(const Program& program) {
         asm_file_ << "format ELF64 executable 3\n";
         asm_file_ << "entry _start\n" << "\n";
+        asm_file_ << "_start:\n";
+        asm_file_ << "call _int_main\n";
+        asm_file_ << "mov rdi, rax\n";
+        asm_file_ << "mov rax, 60\n";
+        asm_file_ << "syscall\n";
+        asm_file_ << "\n";
 
         for (const auto& child : program.children_nodes) {
             const auto* function_def = static_cast<FunctionDef*>(child.get());
