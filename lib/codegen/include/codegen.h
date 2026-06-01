@@ -48,6 +48,13 @@ private:
     Parser::ParseResult parse_result_;
     std::unordered_map<std::string, FunctionSign> function_table_;
 
+    enum class Reg {
+        RAX,
+        RBX,
+        RCX,
+        RDX
+    };
+
     //-----------------Helpers-----------------
     void print_error(const Node& node, std::string error_msg) const {
         std::cout << error_msg;
@@ -67,8 +74,46 @@ private:
         }
     }
 
-    void discard_expr_result() {
-        asm_file_ << "add rsp, 8\n";
+    const char* reg_name(Reg reg) const {
+        switch (reg) {
+            case Reg::RAX:
+                return "rax";
+            case Reg::RBX:
+                return "rbx";
+            case Reg::RCX:
+                return "rcx";
+            case Reg::RDX:
+                return "rdx";
+        }
+
+        throw std::runtime_error("Unexpected register");
+    }
+
+    const char* reg_byte_name(Reg reg) const {
+        switch (reg) {
+            case Reg::RAX:
+                return "al";
+            case Reg::RBX:
+                return "bl";
+            case Reg::RCX:
+                return "cl";
+            case Reg::RDX:
+                return "dl";
+        }
+
+        throw std::runtime_error("Unexpected register");
+    }
+
+    Reg other_reg(Reg reg) const {
+        return reg == Reg::RAX ? Reg::RBX : Reg::RAX;
+    }
+
+    void spill_reg(Reg reg) {
+        asm_file_ << "push " << reg_name(reg) << "\n";
+    }
+
+    void restore_reg(Reg reg) {
+        asm_file_ << "pop " << reg_name(reg) << "\n";
     }
 
     void push_scope(FunctionContext& context) {
@@ -124,6 +169,51 @@ private:
         }
 
         context.scopes.back().symbol_table[identifier] = symbol_info;
+    }
+    //-----------------Ershov_number-----------------
+    bool has_side_effects(const Node& expr) const {
+        switch (expr.node_kind) {
+            case NodeKind::AssignmentExpr:
+            case NodeKind::PostfixExpr:
+            case NodeKind::FuncCallExpr:
+                return true;
+
+            case NodeKind::BinaryOperExpr:
+                return has_side_effects(*expr.children_nodes[0]) ||
+                        has_side_effects(*expr.children_nodes[1]);
+
+            default:
+                return false;
+        }
+    }
+
+    std::size_t compute_ershov(const Node& expr) const {
+        switch (expr.node_kind) {
+            case NodeKind::IdentifierExpr:
+            case NodeKind::IntegerExpr:
+            case NodeKind::PostfixExpr:
+            case NodeKind::FuncCallExpr:
+                return 1;
+
+            case NodeKind::AssignmentExpr:
+                return compute_ershov(*expr.children_nodes[1]);
+
+            case NodeKind::BinaryOperExpr: {
+                const std::size_t left =
+                    compute_ershov(*expr.children_nodes[0]);
+                const std::size_t right =
+                    compute_ershov(*expr.children_nodes[1]);
+
+                if (left == right) {
+                    return left + 1;
+                }
+
+                return std::max(left, right);
+            }
+
+            default:
+                throw std::runtime_error("Unexpected expression node");
+        }
     }
 
     //-----------------Functions-----------------
@@ -443,8 +533,7 @@ private:
 
         const bool has_else = if_stmt.children_nodes.size() == 3;
 
-        emit_expr(condition, context);
-        asm_file_ << "pop rax\n";
+        emit_expr_to_reg(condition, Reg::RAX, context);
         asm_file_ << "cmp rax, 0\n";
 
         if (has_else) {
@@ -494,15 +583,13 @@ private:
         const Node* body_stmt = for_stmt.children_nodes[child_index].get();
 
         if (init_expr != nullptr) {
-            emit_expr(*init_expr, context);
-            discard_expr_result();
+            emit_expr_to_reg(*init_expr, Reg::RAX, context);
         }
 
         asm_file_ << loop_begin << ":\n";
 
         if (cond_expr != nullptr) {
-            emit_expr(*cond_expr, context);
-            asm_file_ << "pop rax\n";
+            emit_expr_to_reg(*cond_expr, Reg::RAX, context);
             asm_file_ << "cmp rax, 0\n";
             asm_file_ << "je " << loop_end << "\n";
         }
@@ -518,8 +605,7 @@ private:
         asm_file_ << loop_step << ":\n";
 
         if (step_expr != nullptr) {
-            emit_expr(*step_expr, context);
-            discard_expr_result();
+            emit_expr_to_reg(*step_expr, Reg::RAX, context);
         }
 
         asm_file_ << "jmp " << loop_begin << "\n";
@@ -529,8 +615,7 @@ private:
     void emit_return_stmt(const ReturnStmt& return_stmt, FunctionContext& context) {
         if (!return_stmt.children_nodes.empty()) {
             const auto* expr = return_stmt.children_nodes[0].get();
-            emit_expr(*expr, context);
-            asm_file_ << "pop rax\n";
+            emit_expr_to_reg(*expr, Reg::RAX, context);
         }
 
         asm_file_ << "jmp " << context.function_end_label << "\n";
@@ -564,52 +649,55 @@ private:
         }
 
         const auto* expression = expression_stmt.children_nodes[0].get();
-        emit_expr(*expression, context);
-        discard_expr_result();
+        emit_expr_to_reg(*expression, Reg::RAX, context);
     }
 
-    // Expression convention:
-    // every emit_*_expr method must leave exactly one result value on stack.
-    void emit_expr(const Node& expression, FunctionContext& context) {
+    void emit_expr_to_reg(const Node& expression, Reg target, FunctionContext& context) {
         switch (expression.node_kind) {
             case NodeKind::AssignmentExpr:
-                emit_assignment_expr(
+                emit_assignment_expr_to_reg(
                     static_cast<const AssignmentExpr&>(expression),
+                    target,
                     context
                 );
                 break;
 
             case NodeKind::PostfixExpr:
-                emit_postfix_expr(
+                emit_postfix_expr_to_reg(
                     static_cast<const PostfixExpr&>(expression),
+                    target,
                     context
                 );
                 break;
 
             case NodeKind::FuncCallExpr:
-                emit_func_call_expr(
+                emit_func_call_expr_to_reg(
                     static_cast<const FuncCallExpr&>(expression),
+                    target,
                     context
                 );
                 break;
 
             case NodeKind::BinaryOperExpr:
-                emit_binary_expr(
+                emit_binary_expr_to_reg(
                     static_cast<const BinaryOperExpr&>(expression),
+                    target,
                     context
                 );
                 break;
 
             case NodeKind::IdentifierExpr:
-                emit_identifier_expr(
+                emit_identifier_expr_to_reg(
                     static_cast<const IdentifierExpr&>(expression),
+                    target,
                     context
                 );
                 break;
 
             case NodeKind::IntegerExpr:
-                emit_integer_expr(
+                emit_integer_expr_to_reg(
                     static_cast<const IntegerExpr&>(expression),
+                    target,
                     context
                 );
                 break;
@@ -620,7 +708,11 @@ private:
         }
     }
 
-    void emit_assignment_expr(const AssignmentExpr& assignment_expr, FunctionContext& context) {
+    void emit_assignment_expr_to_reg(
+        const AssignmentExpr& assignment_expr,
+        Reg target,
+        FunctionContext& context
+    ) {
         const auto* ident =
             static_cast<const IdentifierExpr*>(assignment_expr.children_nodes[0].get());
 
@@ -632,21 +724,23 @@ private:
             throw std::runtime_error("Undefined identifier.");
         }
 
-        emit_expr(*assignment_expr.children_nodes[1], context);
-        asm_file_ << "pop rax\n";
+        emit_expr_to_reg(*assignment_expr.children_nodes[1], target, context);
 
         if (symbol_info->is_param) {
-            asm_file_ << "mov qword [rbp + " << symbol_info->offset << "], rax\n";
+            asm_file_ << "mov qword [rbp + " << symbol_info->offset
+                      << "], " << reg_name(target) << "\n";
         }
         else {
-            asm_file_ << "mov qword [rbp - " << symbol_info->offset << "], rax\n";
+            asm_file_ << "mov qword [rbp - " << symbol_info->offset
+                      << "], " << reg_name(target) << "\n";
         }
-
-        asm_file_ << "push rax\n";
     }
 
-    void emit_postfix_expr(const PostfixExpr& postfix_expr, FunctionContext&
-    context) {
+    void emit_postfix_expr_to_reg(
+        const PostfixExpr& postfix_expr,
+        Reg target,
+        FunctionContext& context
+    ) {
         const std::string& identifier =
             get_identifier_name(*postfix_expr.children_nodes[0].get());
 
@@ -661,10 +755,12 @@ private:
             parse_result_.token_list[postfix_expr.span_.end].lexeme;
 
         if (symbol_info->is_param) {
-            asm_file_ << "push qword [rbp + " << symbol_info->offset << "]\n";
+            asm_file_ << "mov " << reg_name(target)
+                      << ", qword [rbp + " << symbol_info->offset << "]\n";
         }
         else {
-            asm_file_ << "push qword [rbp - " << symbol_info->offset << "]\n";
+            asm_file_ << "mov " << reg_name(target)
+                      << ", qword [rbp - " << symbol_info->offset << "]\n";
         }
 
         if (op_lexeme == "++") {
@@ -689,8 +785,9 @@ private:
         }
     }
 
-    void emit_func_call_expr(
+    void emit_func_call_expr_to_reg(
         const FuncCallExpr& func_call_expr,
+        Reg target,
         FunctionContext& context
     ) {
         const std::string& function_id = func_call_expr.get_func_name();
@@ -715,7 +812,8 @@ private:
              arg_iter != arg_list->children_nodes.rend();
              ++arg_iter)
         {
-            emit_expr(**arg_iter, context);
+            emit_expr_to_reg(**arg_iter, Reg::RAX, context);
+            spill_reg(Reg::RAX);
         }
 
         asm_file_ << "call " << iter->second.function_label << "\n";
@@ -724,102 +822,136 @@ private:
             asm_file_ << "add rsp, " << arg_count * 8 << "\n";
         }
 
-        asm_file_ << "push rax\n";
+        if (target != Reg::RAX) {
+            asm_file_ << "mov " << reg_name(target) << ", rax\n";
+        }
     }
 
-    void emit_binary_expr(const BinaryOperExpr& binary_expr,
-                          FunctionContext&context
+    void emit_binary_expr_to_reg(const BinaryOperExpr& binary_expr,
+                            Reg target,
+                            FunctionContext& context
     ) {
         const auto* left_expr = binary_expr.children_nodes[0].get();
         const auto* right_expr = binary_expr.children_nodes[1].get();
+        const Reg spare = other_reg(target);
 
-        emit_expr(*left_expr, context);
-        emit_expr(*right_expr, context);
+        const bool reorder_allowed =
+            !has_side_effects(*left_expr) &&
+            !has_side_effects(*right_expr);
 
-        asm_file_ << "pop rbx\n";
-        asm_file_ << "pop rax\n";
+        const std::size_t left_ershov = compute_ershov(*left_expr);
+        const std::size_t right_ershov = compute_ershov(*right_expr);
+
+        bool emit_left_first = true;
+
+        if (reorder_allowed) {
+            emit_left_first = left_ershov >= right_ershov;
+        }
+
+        if (emit_left_first) {
+            emit_expr_to_reg(*left_expr, target, context);
+            spill_reg(target);
+            emit_expr_to_reg(*right_expr, target, context);
+            asm_file_ << "mov " << reg_name(spare) << ", " << reg_name(target) << "\n";
+            restore_reg(target);
+        }
+        else {
+            emit_expr_to_reg(*right_expr, target, context);
+            spill_reg(target);
+            emit_expr_to_reg(*left_expr, target, context);
+            restore_reg(spare);
+        }
 
         const std::string& op = binary_expr.get_op_lexeme();
+        const char* target_reg = reg_name(target);
+        const char* spare_reg = reg_name(spare);
+        const char* target_byte = reg_byte_name(target);
+        const char* spare_byte = reg_byte_name(spare);
 
         if (binary_expr.node_name == "AdditiveExpr") {
             if (op == "+") {
-                asm_file_ << "add rax, rbx\n";
+                asm_file_ << "add " << target_reg << ", " << spare_reg << "\n";
             }
             else if (op == "-") {
-                asm_file_ << "sub rax, rbx\n";
+                asm_file_ << "sub " << target_reg << ", " << spare_reg << "\n";
             }
         }
         else if (binary_expr.node_name == "MultiplicativeExpr") {
             if (op == "*") {
-                asm_file_ << "imul rax, rbx\n";
+                asm_file_ << "imul " << target_reg << ", " << spare_reg << "\n";
             }
             else if (op == "/") {
+                if (target != Reg::RAX) {
+                    throw std::runtime_error("Division requires RAX target");
+                }
                 asm_file_ << "cqo\n";
-                asm_file_ << "idiv rbx\n";
+                asm_file_ << "idiv " << spare_reg << "\n";
             }
             else if (op == "%") {
+                if (target != Reg::RAX) {
+                    throw std::runtime_error("Modulo requires RAX target");
+                }
                 asm_file_ << "cqo\n";
-                asm_file_ << "idiv rbx\n";
+                asm_file_ << "idiv " << spare_reg << "\n";
                 asm_file_ << "mov rax, rdx\n";
             }
         }
         else if (binary_expr.node_name == "RelationalExpr") {
-            asm_file_ << "cmp rax, rbx\n";
+            asm_file_ << "cmp " << target_reg << ", " << spare_reg << "\n";
 
             if (op == ">") {
-                asm_file_ << "setg al\n";
+                asm_file_ << "setg " << target_byte << "\n";
             }
             else if (op == ">=") {
-                asm_file_ << "setge al\n";
+                asm_file_ << "setge " << target_byte << "\n";
             }
             else if (op == "<") {
-                asm_file_ << "setl al\n";
+                asm_file_ << "setl " << target_byte << "\n";
             }
             else if (op == "<=") {
-                asm_file_ << "setle al\n";
+                asm_file_ << "setle " << target_byte << "\n";
             }
 
-            asm_file_ << "movzx rax, al\n";
+            asm_file_ << "movzx " << target_reg << ", " << target_byte << "\n";
         }
         else if (binary_expr.node_name == "EqualityExpr") {
-            asm_file_ << "cmp rax, rbx\n";
+            asm_file_ << "cmp " << target_reg << ", " << spare_reg << "\n";
 
             if (op == "==") {
-                asm_file_ << "sete al\n";
+                asm_file_ << "sete " << target_byte << "\n";
             }
             else if (op == "!=") {
-                asm_file_ << "setne al\n";
+                asm_file_ << "setne " << target_byte << "\n";
             }
 
-            asm_file_ << "movzx rax, al\n";
+            asm_file_ << "movzx " << target_reg << ", " << target_byte << "\n";
         }
         else if (binary_expr.node_name == "LogicalAndExpr") {
-            asm_file_ << "cmp rax, 0\n";
-            asm_file_ << "setne al\n";
-            asm_file_ << "movzx rax, al\n";
-            asm_file_ << "cmp rbx, 0\n";
-            asm_file_ << "setne bl\n";
-            asm_file_ << "movzx rbx, bl\n";
-            asm_file_ << "and rax, rbx\n";
+            asm_file_ << "cmp " << target_reg << ", 0\n";
+            asm_file_ << "setne " << target_byte << "\n";
+            asm_file_ << "movzx " << target_reg << ", " << target_byte << "\n";
+            asm_file_ << "cmp " << spare_reg << ", 0\n";
+            asm_file_ << "setne " << spare_byte << "\n";
+            asm_file_ << "movzx " << spare_reg << ", " << spare_byte << "\n";
+            asm_file_ << "and " << target_reg << ", " << spare_reg << "\n";
         }
         else if (binary_expr.node_name == "LogicalOrExpr") {
-            asm_file_ << "cmp rax, 0\n";
-            asm_file_ << "setne al\n";
-            asm_file_ << "movzx rax, al\n";
-            asm_file_ << "cmp rbx, 0\n";
-            asm_file_ << "setne bl\n";
-            asm_file_ << "movzx rbx, bl\n";
-            asm_file_ << "or rax, rbx\n";
+            asm_file_ << "cmp " << target_reg << ", 0\n";
+            asm_file_ << "setne " << target_byte << "\n";
+            asm_file_ << "movzx " << target_reg << ", " << target_byte << "\n";
+            asm_file_ << "cmp " << spare_reg << ", 0\n";
+            asm_file_ << "setne " << spare_byte << "\n";
+            asm_file_ << "movzx " << spare_reg << ", " << spare_byte << "\n";
+            asm_file_ << "or " << target_reg << ", " << spare_reg << "\n";
         }
         else {
             print_error(binary_expr, "Unsupported binary expression.");
             throw std::runtime_error("Unsupported binary expression");
         }
-
-        asm_file_ << "push rax\n";
     }
 
-    void emit_identifier_expr(const IdentifierExpr& identifier_expr,
+    void emit_identifier_expr_to_reg(const IdentifierExpr& identifier_expr,
+                                Reg target,
                                 FunctionContext& context) {
         const std::string& identifier = get_identifier_name(identifier_expr);
 
@@ -827,10 +959,12 @@ private:
 
         if (symbol_info != nullptr) {
             if (symbol_info->is_param) {
-                asm_file_ << "push qword [rbp + " << symbol_info->offset << "]\n";
+                asm_file_ << "mov " << reg_name(target)
+                          << ", qword [rbp + " << symbol_info->offset << "]\n";
             }
             else {
-                asm_file_ << "push qword [rbp - " << symbol_info->offset << "]\n";
+                asm_file_ << "mov " << reg_name(target)
+                          << ", qword [rbp - " << symbol_info->offset << "]\n";
             }
         }
         else {
@@ -839,13 +973,14 @@ private:
         }
     }
 
-  void emit_integer_expr(const IntegerExpr& integer_expr,
-                         FunctionContext& context) {
+  void emit_integer_expr_to_reg(const IntegerExpr& integer_expr,
+                         Reg target,
+                         FunctionContext&) {
       const std::string& lexeme =
           parse_result_.token_list[integer_expr.span_.begin].lexeme;
 
       const int int_value = std::stoi(lexeme);
 
-      asm_file_ << "push " << int_value << "\n";
+      asm_file_ << "mov " << reg_name(target) << ", " << int_value << "\n";
   }
 };
