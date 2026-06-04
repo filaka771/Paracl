@@ -1,0 +1,18 @@
+int function(int a) {
+    b = 10;
+    c = a + b;
+
+    for (i = 0; i < b; i ++) {
+        c = c + 1;
+    }
+
+    if (a > b) {
+        c = c + 1;
+    } else {
+        c = c - 1;
+    }
+
+    c = (3 * a + 2 * b) * d + 4;
+
+    return c;
+}
