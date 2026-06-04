@@ -10,8 +10,10 @@
 
 class CodeGen {
 public: 
-    CodeGen(std::string &file_name, Parser::ParseResult parse_result)
-    : asm_file_(file_name), parse_result_(std::move(parse_result)) {}
+    CodeGen(const std::string& file_name, Parser::ParseResult parse_result)
+    : asm_file_(file_name), parse_result_(std::move(parse_result)) {
+        generate();
+    }
 
     void generate() {
         collect_program(*parse_result_.program);
