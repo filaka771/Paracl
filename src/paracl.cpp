@@ -97,7 +97,7 @@ int main(int argc, char* argv[]) {
         Parser parser(lexer);
 
         if (flag == 'a') {
-            parser.PrintAST();
+            parser.print_ast();
             return 0;
         }
 

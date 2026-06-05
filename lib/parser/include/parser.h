@@ -419,8 +419,8 @@ public:
         };
     }
 
-    void PrintAST() {
-        PrintAST(*program_, "", true);
+    void print_ast() {
+        print_ast(*program_, "", true);
     }
 
 
@@ -448,7 +448,7 @@ private:
         };
     }
 
-    void PrintAST(
+    void print_ast(
         Node& node,
         const std::string& prefix,
         bool is_last_child
@@ -466,7 +466,7 @@ private:
                 : prefix + (is_last_child ? "   " : "\u2502  ");
 
         for (size_t i = 0; i < node.children_nodes.size(); ++i) {
-            PrintAST(
+            print_ast(
                 *node.children_nodes[i],
                 child_prefix,
                 i + 1 == node.children_nodes.size()
