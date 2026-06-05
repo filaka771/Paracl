@@ -15,10 +15,6 @@ public:
         generate();
     }
 
-    void generate() {
-        collect_program(*parse_result_.program);
-        emit_program(*parse_result_.program);
-    }
 
 private:
     struct FunctionSign {
@@ -56,6 +52,11 @@ private:
         RCX,
         RDX
     };
+
+    void generate() {
+        collect_program(*parse_result_.program);
+        emit_program(*parse_result_.program);
+    }
 
     //-----------------Helpers-----------------
     void print_error(const Node& node, std::string error_msg) const {
