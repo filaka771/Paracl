@@ -276,15 +276,20 @@ private:
 
     void collect_compound_locals(
         const CompoundStmt& compound_stmt,
-        FunctionContext& context
+        FunctionContext& context,
+        bool create_scope = true
     ) {
-        push_scope(context);
+        if (create_scope) {
+            push_scope(context);
+        }
 
         for (const auto& node : compound_stmt.children_nodes) {
             collect_statement_locals(*node, context);
         }
 
-        pop_scope(context);
+        if (create_scope) {
+            pop_scope(context);
+        }
     }
 
     void collect_statement_locals(const Node& node, FunctionContext& context) {
@@ -442,7 +447,7 @@ private:
 
         push_scope(context);
         collect_parameters(*param_list, context);
-        collect_compound_locals(*compound_stmt, context);
+        collect_compound_locals(*compound_stmt, context, false);
 
         asm_file_ << function_label << ":\n";
         asm_file_ << "push rbp\n";
@@ -452,7 +457,7 @@ private:
             asm_file_ << "sub rsp, " << context.next_offset << "\n";
         }
 
-        emit_compound_stmt(*compound_stmt, context);
+        emit_compound_stmt(*compound_stmt, context, false);
         asm_file_ << context.function_fallthrough_label << ":\n";
         asm_file_ << "ud2\n";
         asm_file_ << context.function_end_label << ":\n";
@@ -464,15 +469,20 @@ private:
 
     void emit_compound_stmt(
         const CompoundStmt& compound_stmt,
-        FunctionContext& context
+        FunctionContext& context,
+        bool create_scope = true
     ) {
-        push_scope(context);
+        if (create_scope) {
+            push_scope(context);
+        }
 
         for (const auto& node : compound_stmt.children_nodes) {
             emit_statement(*node, context);
         }
 
-        pop_scope(context);
+        if (create_scope) {
+            pop_scope(context);
+        }
     }
 
     void emit_statement(const Node& node, FunctionContext& context) {
