@@ -10,4 +10,4 @@ target_link_libraries(parser_test PRIVATE parser GTest::gtest_main)
 gtest_discover_tests(parser_test)
 
 add_executable(codegen_test codegen/src/codegen_test.cpp)
-target_link_libraries(codegen_test PRIVATE codegen)
+target_link_libraries(codegen_test PRIVATE paracl_codegen)
