@@ -18,24 +18,24 @@ struct SourceSpan {
 };
 
 enum class NodeKind {
-    Program,
-    FunctionDef,
+    TranslationUnitDecl,
+    FunctionDecl,
     ParameterList,
-    Parameter,
+    ParmVarDecl,
     CompoundStmt,
-    ExpressionStmt,
+    ExprStmt,
     NullStmt,
     IfStmt,
     ForStmt,
     ReturnStmt,
     BreakStmt,
     ContinueStmt,
-    IdentifierExpr,
-    IntegerExpr,
+    DeclRefExpr,
+    IntegerLiteral,
     PostfixExpr,
-    FuncCallExpr,
+    CallExpr,
     ArgumentListExpr,
-    BinaryOperExpr,
+    BinaryOperator,
     AssignmentExpr
 };
 
@@ -75,11 +75,11 @@ public:
     }
 };
 
-//----------------Program----------------
-class Program : public Node {
+//----------------TranslationUnitDecl----------------
+class TranslationUnitDecl : public Node {
 public:
-    Program(std::string node_name, SourceSpan span)
-    : Node(std::move(node_name), NodeKind::Program, nullptr, {}, span)
+    TranslationUnitDecl(std::string node_name, SourceSpan span)
+    : Node(std::move(node_name), NodeKind::TranslationUnitDecl, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -88,15 +88,15 @@ public:
 };
 
 //----------------Functions----------------
-class FunctionDef : public Node {
+class FunctionDecl : public Node {
 public:
-    FunctionDef(
+    FunctionDecl(
         std::string node_name,
         Node* parent,
         SourceSpan span,
         std::string function_id
     )
-    : Node(std::move(node_name), NodeKind::FunctionDef, parent, {}, span),
+    : Node(std::move(node_name), NodeKind::FunctionDecl, parent, {}, span),
       function_id_(std::move(function_id))
     {}
 
@@ -125,20 +125,20 @@ public:
 
 };
 
-class Parameter : public Node {
+class ParmVarDecl : public Node {
 public:
-    Parameter(
+    ParmVarDecl(
         SourceSpan span,
         std::string type_name,
         std::string ident_name
     )
-    : Node("Parameter", NodeKind::Parameter, nullptr, {}, span),
+    : Node("ParmVarDecl", NodeKind::ParmVarDecl, nullptr, {}, span),
       type_name_(std::move(type_name)),
       ident_name_(std::move(ident_name))
     {}
 
     void print_node() override {
-        std::cout << "Parameter "
+        std::cout << "ParmVarDecl "
                   << type_name_
                   << " "
                   << ident_name_
@@ -167,10 +167,10 @@ public:
 
 };
 
-class ExpressionStmt : public Node {
+class ExprStmt : public Node {
 public:
-    ExpressionStmt(SourceSpan span)
-    : Node("ExpressionStmt", NodeKind::ExpressionStmt, nullptr, {}, span)
+    ExprStmt(SourceSpan span)
+    : Node("ExprStmt", NodeKind::ExprStmt, nullptr, {}, span)
     {}
 
     void print_node() override {
@@ -280,10 +280,10 @@ public:
 };
 
 //----------------Expressions----------------
-class IdentifierExpr : public Node {
+class DeclRefExpr : public Node {
 public:
-    IdentifierExpr(SourceSpan span, std::string ident_name)
-    : Node("IdentifierExpr", NodeKind::IdentifierExpr, nullptr, {}, span),
+    DeclRefExpr(SourceSpan span, std::string ident_name)
+    : Node("DeclRefExpr", NodeKind::DeclRefExpr, nullptr, {}, span),
       ident_name_(std::move(ident_name))
     {}
 
@@ -295,10 +295,10 @@ private:
     std::string ident_name_;
 };
 
-class IntegerExpr : public Node {
+class IntegerLiteral : public Node {
 public:
-    IntegerExpr(SourceSpan span, std::string token_value)
-    : Node("IntegerExpr", NodeKind::IntegerExpr, nullptr, {}, span),
+    IntegerLiteral(SourceSpan span, std::string token_value)
+    : Node("IntegerLiteral", NodeKind::IntegerLiteral, nullptr, {}, span),
       token_value_(std::move(token_value))
     {}
 
@@ -318,7 +318,7 @@ public:
     {}
 
     void print_node() override {
-        std::cout << "PostfixOp \"" << op_lexeme_ << "\"\n";
+        std::cout << "PostfixExpr \"" << op_lexeme_ << "\"\n";
     }
 
 private:
@@ -326,17 +326,17 @@ private:
 };
 
 
-class FuncCallExpr : public Node {
+class CallExpr : public Node {
 public:
-    FuncCallExpr(
+    CallExpr(
         SourceSpan span,
         std::string func_name
-    ) : Node("FunctionCall", NodeKind::FuncCallExpr, nullptr, {}, span),
+    ) : Node("CallExpr", NodeKind::CallExpr, nullptr, {}, span),
         func_name_(std::move(func_name))
     {}
 
     void print_node() override {
-        std::cout << "FunctionCall " << func_name_ << "\n";
+        std::cout << "CallExpr " << func_name_ << "\n";
     }
 
     const std::string& get_func_name() const {return func_name_;}
@@ -356,13 +356,13 @@ public:
     }
 };
 
-class BinaryOperExpr : public Node {
+class BinaryOperator : public Node {
 public:
-    BinaryOperExpr(
+    BinaryOperator(
         std::string node_name,
         SourceSpan span,
         std::string op_lexeme
-    ) : Node(node_name, NodeKind::BinaryOperExpr, nullptr, {}, span),
+    ) : Node(node_name, NodeKind::BinaryOperator, nullptr, {}, span),
         op_lexeme_(std::move(op_lexeme))
     {}
 
@@ -399,7 +399,7 @@ public:
     using ExprRange = std::tuple<TokenIter, TokenIter>;
     struct ParseResult {
         TokenList token_list;
-        std::unique_ptr<Program> program;
+        std::unique_ptr<TranslationUnitDecl> program;
     };
 
     Parser(const Lexer& lexer)
@@ -426,7 +426,7 @@ public:
 
 private:
     TokenList token_list_;
-    std::unique_ptr<Program> program_;
+    std::unique_ptr<TranslationUnitDecl> program_;
 
     std::size_t to_index(TokenIter token_iter) {
         return static_cast<std::size_t>(
@@ -474,7 +474,7 @@ private:
         }
     }
 
-    void print_error(TokenIter token_iter, const std::string& error_msg) {
+    void report_error(TokenIter token_iter, const std::string& error_msg) {
         if (token_list_.empty()) {
             std::cout << "Error: " << error_msg << '\n';
             return;
@@ -527,14 +527,14 @@ private:
         const std::string& err_msg_no_close_bracket
     ) {
         if (token_iter == token_list_.end()) {
-            print_error(token_iter, err_msg_no_open_bracket);
+            report_error(token_iter, err_msg_no_open_bracket);
             throw std::runtime_error("No open bracket");
         }
 
         std::tuple<TokenIter, TokenIter> brackets_pair;
 
         if (token_iter->type != open_type) {
-            print_error(token_iter, err_msg_no_open_bracket);
+            report_error(token_iter, err_msg_no_open_bracket);
             throw std::runtime_error("No open bracket");
         }
 
@@ -547,7 +547,7 @@ private:
             ++token_iter;
 
             if (token_iter == token_list_.end()) {
-                print_error(std::prev(token_iter), err_msg_no_close_bracket);
+                report_error(std::prev(token_iter), err_msg_no_close_bracket);
                 throw std::runtime_error("No close bracket");
             }
 
@@ -565,12 +565,12 @@ private:
     }
 
     //---------------------------------Parsers------------------------------
-    std::unique_ptr<Program> parse_program() {
+    std::unique_ptr<TranslationUnitDecl> parse_program() {
         auto program_span = token_list_.empty()
             ? SourceSpan{0, 0}
             : SourceSpan{0, token_list_.size() - 1};
 
-        auto program = std::make_unique<Program>("Program", program_span);
+        auto program = std::make_unique<TranslationUnitDecl>("TranslationUnitDecl", program_span);
 
         auto token_iter = token_list_.begin();
 
@@ -581,7 +581,7 @@ private:
         return program;
     }
 
-    std::unique_ptr<FunctionDef> parse_function(TokenIter& token_iter) {
+    std::unique_ptr<FunctionDecl> parse_function(TokenIter& token_iter) {
         TokenIter func_name_iter;
 
         std::tuple<TokenIter, TokenIter> param_list_iter;
@@ -597,7 +597,7 @@ private:
             token_iter += 2;
         }
         else {
-            print_error(
+            report_error(
                 token_iter,
                 "On the top level program may contain only function definitions."
             );
@@ -605,11 +605,11 @@ private:
             throw std::runtime_error("Invalid function declaration");
         }
 
-        // Parameter list parsing.
+        // ParmVarDecl list parsing.
         param_list_iter = find_brackets_pair(
             token_iter,
-            Lexer::TokenType::TOKEN_L_PARENTH,
-            Lexer::TokenType::TOKEN_R_PARENTH,
+            Lexer::TokenType::TOKEN_L_PAREN,
+            Lexer::TokenType::TOKEN_R_PAREN,
             "Invalid function definition. Function definition must contain list of parameters!",
             "No matching right parenthesis in function definition!"
         );
@@ -618,7 +618,7 @@ private:
         ++token_iter;
 
         if (token_iter == token_list_.end()) {
-            print_error(
+            report_error(
                 func_name_iter,
                 "Invalid function declaration! Function declaration lacks a compound statement!"
             );
@@ -637,8 +637,8 @@ private:
         token_iter = std::get<1>(compound_stmt_iter);
         ++token_iter;
 
-        auto function_node = std::make_unique<FunctionDef>(
-            "FunctionDef",
+        auto function_node = std::make_unique<FunctionDecl>(
+            "FunctionDecl",
             nullptr,
             SourceSpan{to_index(func_name_iter - 1), to_index(std::get<1>(compound_stmt_iter))},
             func_name_iter->lexeme
@@ -674,7 +674,7 @@ private:
                 (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
             {
                 parameter_list->add_child(
-                    std::make_unique<Parameter>(
+                    std::make_unique<ParmVarDecl>(
                         SourceSpan{to_index(token_iter), to_index(token_iter + 1)},
                         token_iter->lexeme,
                         (token_iter + 1)->lexeme
@@ -684,7 +684,7 @@ private:
                 token_iter += 2;
             }
             else {
-                print_error(token_iter, "Invalid parameter.");
+                report_error(token_iter, "Invalid parameter.");
                 throw std::runtime_error("Invalid parameter");
             }
 
@@ -693,14 +693,14 @@ private:
             }
 
             if (token_iter->type != Lexer::TokenType::TOKEN_COMMA) {
-                print_error(token_iter, "Expected ',' between parameters.");
+                report_error(token_iter, "Expected ',' between parameters.");
                 throw std::runtime_error("Expected comma between parameters");
             }
 
             ++token_iter;
 
             if (token_iter == end_iter) {
-                print_error(std::prev(token_iter), "Expected parameter after ','.");
+                report_error(std::prev(token_iter), "Expected parameter after ','.");
                 throw std::runtime_error("Expected parameter after comma");
             }
         }
@@ -714,7 +714,7 @@ private:
         const std::string& error_msg
     ) {
         if (token_iter == token_list_.end() || token_iter->type != expected_type) {
-            print_error(token_iter, error_msg);
+            report_error(token_iter, error_msg);
             throw std::runtime_error(error_msg);
         }
     }
@@ -724,10 +724,10 @@ private:
         int bracket_depth = 0;
 
         for (auto iter = begin; iter != end_iter; ++iter) {
-            if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+            if (iter->type == Lexer::TokenType::TOKEN_L_PAREN) {
                 ++paren_depth;
             }
-            else if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+            else if (iter->type == Lexer::TokenType::TOKEN_R_PAREN) {
                 --paren_depth;
             }
             else if (iter->type == Lexer::TokenType::TOKEN_L_BRACKET) {
@@ -750,7 +750,7 @@ private:
 
     std::unique_ptr<Node> parse_statement(TokenIter& token_iter, TokenIter end_iter) {
         if (token_iter == end_iter) {
-            print_error(token_iter, "Expected statement.");
+            report_error(token_iter, "Expected statement.");
             throw std::runtime_error("Expected statement");
         }
 
@@ -777,7 +777,7 @@ private:
                 return parse_continue_statement(token_iter, end_iter);
 
             case Lexer::TokenType::TOKEN_ELSE:
-                print_error(token_iter, "Unexpected 'else' without matching 'if'.");
+                report_error(token_iter, "Unexpected 'else' without matching 'if'.");
                 throw std::runtime_error("Unexpected else");
 
             default:
@@ -822,14 +822,14 @@ private:
         auto semicolon_iter = find_top_level_semicolon(token_iter, end_iter);
 
         if (semicolon_iter == end_iter) {
-            print_error(token_iter, "Expected ';' after expression.");
+            report_error(token_iter, "Expected ';' after expression.");
             throw std::runtime_error("Expected semicolon after expression");
         }
 
         auto stmt_range = std::make_tuple(stmt_begin, semicolon_iter);
         auto expr_range = std::make_tuple(stmt_begin, semicolon_iter - 1);
 
-        auto expr_stmt = std::make_unique<ExpressionStmt>(make_span(stmt_range));
+        auto expr_stmt = std::make_unique<ExprStmt>(make_span(stmt_range));
 
         expr_stmt->add_child(
             parse_expr(expr_range)
@@ -872,8 +872,8 @@ private:
 
         auto condition_full_range = find_brackets_pair(
             token_iter,
-            Lexer::TokenType::TOKEN_L_PARENTH,
-            Lexer::TokenType::TOKEN_R_PARENTH,
+            Lexer::TokenType::TOKEN_L_PAREN,
+            Lexer::TokenType::TOKEN_R_PAREN,
             "Expected '(' after 'if'.",
             "Expected ')' after if condition."
         );
@@ -882,7 +882,7 @@ private:
         auto cond_end = std::get<1>(condition_full_range) - 1;
 
         if (cond_begin > cond_end) {
-            print_error(std::get<0>(condition_full_range), "If condition cannot be empty.");
+            report_error(std::get<0>(condition_full_range), "If condition cannot be empty.");
             throw std::runtime_error("Empty if condition");
         }
 
@@ -892,7 +892,7 @@ private:
         token_iter = std::get<1>(condition_full_range) + 1;
 
         if (token_iter == end_iter) {
-            print_error(token_iter, "Expected statement after if condition.");
+            report_error(token_iter, "Expected statement after if condition.");
             throw std::runtime_error("Expected if body");
         }
 
@@ -908,7 +908,7 @@ private:
             ++token_iter;
 
             if (token_iter == end_iter) {
-                print_error(token_iter, "Expected statement after 'else'.");
+                report_error(token_iter, "Expected statement after 'else'.");
                 throw std::runtime_error("Expected else body");
             }
 
@@ -948,8 +948,8 @@ private:
 
         auto header_full_range = find_brackets_pair(
             token_iter,
-            Lexer::TokenType::TOKEN_L_PARENTH,
-            Lexer::TokenType::TOKEN_R_PARENTH,
+            Lexer::TokenType::TOKEN_L_PAREN,
+            Lexer::TokenType::TOKEN_R_PAREN,
             "Expected '(' after 'for'.",
             "Expected ')' after for header."
         );
@@ -964,10 +964,10 @@ private:
         int bracket_depth = 0;
 
         for (auto iter = header_begin; iter <= header_end; ++iter) {
-            if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+            if (iter->type == Lexer::TokenType::TOKEN_L_PAREN) {
                 ++paren_depth;
             }
-            else if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+            else if (iter->type == Lexer::TokenType::TOKEN_R_PAREN) {
                 --paren_depth;
             }
             else if (iter->type == Lexer::TokenType::TOKEN_L_BRACKET) {
@@ -994,7 +994,7 @@ private:
         if (first_semicolon == token_list_.end() ||
             second_semicolon == token_list_.end())
         {
-            print_error(std::get<0>(header_full_range), "For header must contain two semicolons.");
+            report_error(std::get<0>(header_full_range), "For header must contain two semicolons.");
             throw std::runtime_error("Invalid for header");
         }
 
@@ -1033,7 +1033,7 @@ private:
         token_iter = std::get<1>(header_full_range) + 1;
 
         if (token_iter == end_iter) {
-            print_error(token_iter, "Expected statement after for header.");
+            report_error(token_iter, "Expected statement after for header.");
             throw std::runtime_error("Expected for body");
         }
 
@@ -1082,7 +1082,7 @@ private:
         auto semicolon_iter = find_top_level_semicolon(token_iter, end_iter);
 
         if (semicolon_iter == end_iter) {
-            print_error(stmt_begin, "Expected ';' after return statement.");
+            report_error(stmt_begin, "Expected ';' after return statement.");
             throw std::runtime_error("Expected semicolon after return");
         }
 
@@ -1173,20 +1173,20 @@ private:
     
     std::unique_ptr<Node> parse_primary_expr(TokenIter primary_iter) {
         if (primary_iter->type == Lexer::TokenType::TOKEN_IDENT) {
-            return std::make_unique<IdentifierExpr>(
+            return std::make_unique<DeclRefExpr>(
                 make_span(primary_iter),
                 primary_iter->lexeme
             );
         }
 
         if (primary_iter->type == Lexer::TokenType::TOKEN_DECIMAL_INT) {
-            return std::make_unique<IntegerExpr>(
+            return std::make_unique<IntegerLiteral>(
                 make_span(primary_iter),
                 primary_iter->lexeme
             );
         }
 
-        print_error(primary_iter, "Expected primary expression.");
+        report_error(primary_iter, "Expected primary expression.");
         throw std::runtime_error("Expected primary expression");
     }
 
@@ -1195,7 +1195,7 @@ private:
         auto end   = std::get<1>(expr);
 
         if (begin > end) {
-            print_error(begin, "Expected primary expression.");
+            report_error(begin, "Expected primary expression.");
             throw std::runtime_error("Expected primary expression");
         }
 
@@ -1203,13 +1203,13 @@ private:
             return parse_primary_expr(begin);
         }
 
-        if (begin->type == Lexer::TokenType::TOKEN_L_PARENTH &&
-            end->type == Lexer::TokenType::TOKEN_R_PARENTH)
+        if (begin->type == Lexer::TokenType::TOKEN_L_PAREN &&
+            end->type == Lexer::TokenType::TOKEN_R_PAREN)
         {
             return parse_expr(std::make_tuple(begin + 1, end - 1));
         }
 
-        print_error(begin, "Invalid primary expression.");
+        report_error(begin, "Invalid primary expression.");
         throw std::runtime_error("Invalid primary expression");
     }
 
@@ -1229,10 +1229,10 @@ private:
         auto arg_begin = begin;
 
         for (auto iter = begin; iter <= end; ++iter) {
-            if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+            if (iter->type == Lexer::TokenType::TOKEN_L_PAREN) {
                 ++paren_depth;
             }
-            else if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+            else if (iter->type == Lexer::TokenType::TOKEN_R_PAREN) {
                 --paren_depth;
             }
 
@@ -1240,7 +1240,7 @@ private:
                 iter->type == Lexer::TokenType::TOKEN_COMMA)
             {
                 if (arg_begin > iter - 1) {
-                    print_error(iter, "Expected argument before comma.");
+                    report_error(iter, "Expected argument before comma.");
                     throw std::runtime_error("Expected argument before comma");
                 }
 
@@ -1266,7 +1266,7 @@ private:
         auto end   = std::get<1>(expr);
 
         if (begin > end) {
-            print_error(begin, "Expected postfix expression.");
+            report_error(begin, "Expected postfix expression.");
             throw std::runtime_error("Expected postfix expression");
         }
 
@@ -1287,10 +1287,10 @@ private:
         // foo() / foo(a, b)
         if (begin->type == Lexer::TokenType::TOKEN_IDENT &&
             begin + 1 <= end &&
-            (begin + 1)->type == Lexer::TokenType::TOKEN_L_PARENTH &&
-            end->type == Lexer::TokenType::TOKEN_R_PARENTH)
+            (begin + 1)->type == Lexer::TokenType::TOKEN_L_PAREN &&
+            end->type == Lexer::TokenType::TOKEN_R_PAREN)
         {
-            auto call_node = std::make_unique<FuncCallExpr>(
+            auto call_node = std::make_unique<CallExpr>(
                 make_span(expr),
                 begin->lexeme
             );
@@ -1315,10 +1315,10 @@ private:
         int paren_depth = 0;
 
         for (auto iter = end;; --iter) {
-            if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+            if (iter->type == Lexer::TokenType::TOKEN_R_PAREN) {
                 ++paren_depth;
             }
-            else if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+            else if (iter->type == Lexer::TokenType::TOKEN_L_PAREN) {
                 --paren_depth;
             }
 
@@ -1355,7 +1355,7 @@ private:
         auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
         auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
 
-        auto node = std::make_unique<BinaryOperExpr>(
+        auto node = std::make_unique<BinaryOperator>(
             "MultiplicativeExpr",
             make_span(expr),
             op_iter->lexeme
@@ -1383,7 +1383,7 @@ private:
         auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
         auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
 
-        auto node = std::make_unique<BinaryOperExpr>(
+        auto node = std::make_unique<BinaryOperator>(
             "AdditiveExpr",
             make_span(expr),
             op_iter->lexeme
@@ -1413,7 +1413,7 @@ private:
         auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
         auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
 
-        auto node = std::make_unique<BinaryOperExpr>(
+        auto node = std::make_unique<BinaryOperator>(
             "RelationalExpr",
             make_span(expr),
             op_iter->lexeme
@@ -1441,7 +1441,7 @@ private:
         auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
         auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
 
-        auto node = std::make_unique<BinaryOperExpr>(
+        auto node = std::make_unique<BinaryOperator>(
             "EqualityExpr",
             make_span(expr),
             op_iter->lexeme
@@ -1468,7 +1468,7 @@ private:
         auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
         auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
 
-        auto node = std::make_unique<BinaryOperExpr>(
+        auto node = std::make_unique<BinaryOperator>(
             "LogicalAndExpr",
             make_span(expr),
             op_iter->lexeme
@@ -1495,7 +1495,7 @@ private:
         auto left_expr  = std::make_tuple(std::get<0>(expr), op_iter - 1);
         auto right_expr = std::make_tuple(op_iter + 1, std::get<1>(expr));
 
-        auto node = std::make_unique<BinaryOperExpr>(
+        auto node = std::make_unique<BinaryOperator>(
             "LogicalOrExpr",
             make_span(expr),
             op_iter->lexeme
@@ -1514,10 +1514,10 @@ private:
         int paren_depth = 0;
 
         for (auto iter = begin; iter <= end; ++iter) {
-            if (iter->type == Lexer::TokenType::TOKEN_L_PARENTH) {
+            if (iter->type == Lexer::TokenType::TOKEN_L_PAREN) {
                 ++paren_depth;
             }
-            else if (iter->type == Lexer::TokenType::TOKEN_R_PARENTH) {
+            else if (iter->type == Lexer::TokenType::TOKEN_R_PAREN) {
                 --paren_depth;
             }
 

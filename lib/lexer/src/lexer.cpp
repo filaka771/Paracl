@@ -7,7 +7,7 @@
 #include <cctype>
 #include <algorithm>
 #include "lexer.h"
-#include "cli-tabel.h"
+#include "cli-table.h"
 
 const std::unordered_map<std::string_view, Lexer::TokenType> Lexer::keywords = {
     {"int",    TokenType::TOKEN_INT},
@@ -45,8 +45,8 @@ const std::unordered_map<Lexer::TokenType, std::string> Lexer::token_names = {
     {TokenType::TOKEN_LOGICAL_AND,   "LOG_AND"},
     {TokenType::TOKEN_LOGICAL_OR,    "LOG_OR"},
     {TokenType::TOKEN_NOT,           "NOT"},
-    {TokenType::TOKEN_L_PARENTH,     "L_PARENTH"},
-    {TokenType::TOKEN_R_PARENTH,     "R_PARENTH"},
+    {TokenType::TOKEN_L_PAREN,       "L_PAREN"},
+    {TokenType::TOKEN_R_PAREN,       "R_PAREN"},
     {TokenType::TOKEN_L_BRACE,       "L_BRACE"},
     {TokenType::TOKEN_R_BRACE,       "R_BRACE"},
     {TokenType::TOKEN_L_BRACKET,     "L_BRACKET"},
@@ -303,8 +303,8 @@ void Lexer::parse_operator_or_punctuator() {
                 return;
             }
             break;
-        case '(': type = TokenType::TOKEN_L_PARENTH; lexeme = "("; char_pos_++; break;
-        case ')': type = TokenType::TOKEN_R_PARENTH; lexeme = ")"; char_pos_++; break;
+        case '(': type = TokenType::TOKEN_L_PAREN; lexeme = "("; char_pos_++; break;
+        case ')': type = TokenType::TOKEN_R_PAREN; lexeme = ")"; char_pos_++; break;
         case '{': type = TokenType::TOKEN_L_BRACE;   lexeme = "{"; char_pos_++; break;
         case '}': type = TokenType::TOKEN_R_BRACE;   lexeme = "}"; char_pos_++; break;
         case '[': type = TokenType::TOKEN_L_BRACKET; lexeme = "["; char_pos_++; break;

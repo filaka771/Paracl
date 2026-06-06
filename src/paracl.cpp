@@ -20,17 +20,17 @@ void print_usage_error(const char* prog_name, const std::string& message) {
 
 bool verify_file_extension(
     const std::string& path,
-    const std::string& ref_extension
+    const std::string& expected_extension
 ) {
-    const std::size_t point_pos = path.rfind('.');
-    if (point_pos == std::string::npos) {
+    const std::size_t extension_pos = path.rfind('.');
+    if (extension_pos == std::string::npos) {
         return false;
     }
 
-    return path.substr(point_pos) == ref_extension;
+    return path.substr(extension_pos) == expected_extension;
 }
 
-char parse_flag(const char* arg) {
+char parse_mode_flag(const char* arg) {
     const std::string flag(arg);
     if (flag.size() != 2 || flag[0] != '-') {
         return '\0';
@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    const char flag = parse_flag(argv[1]);
+    const char flag = parse_mode_flag(argv[1]);
     if (flag != 't' && flag != 'a' && flag != 'c') {
         print_usage_error(argv[0], "unknown option");
         return 1;

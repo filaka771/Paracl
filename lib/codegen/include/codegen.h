@@ -17,7 +17,7 @@ public:
 
 
 private:
-    struct FunctionSign {
+    struct FunctionInfo {
         std::size_t param_count;
         std::string function_label;
     };
@@ -44,13 +44,11 @@ private:
 
     std::ofstream asm_file_;
     Parser::ParseResult parse_result_;
-    std::unordered_map<std::string, FunctionSign> function_table_;
+    std::unordered_map<std::string, FunctionInfo> function_table_;
 
     enum class Reg {
         RAX,
         RBX,
-        RCX,
-        RDX
     };
 
     void generate() {
@@ -59,7 +57,7 @@ private:
     }
 
     //-----------------Helpers-----------------
-    void print_error(const Node& node, std::string error_msg) const {
+    void report_error(const Node& node, std::string error_msg) const {
         std::cout << error_msg;
         const auto line = parse_result_.token_list[node.span_.begin].line;
         const auto column = parse_result_.token_list[node.span_.begin].column; 
@@ -68,11 +66,11 @@ private:
 
     const std::string& get_identifier_name(const Node& node) const {
         switch (node.node_kind) {
-            case NodeKind::IdentifierExpr:
+            case NodeKind::DeclRefExpr:
                 return parse_result_.token_list[node.span_.begin].lexeme;
 
             default:
-                print_error(node, "Node does not contain identifier.");
+                report_error(node, "Node does not contain identifier.");
                 throw std::runtime_error("Node does not contain identifier");
         }
     }
@@ -83,10 +81,6 @@ private:
                 return "rax";
             case Reg::RBX:
                 return "rbx";
-            case Reg::RCX:
-                return "rcx";
-            case Reg::RDX:
-                return "rdx";
         }
 
         throw std::runtime_error("Unexpected register");
@@ -98,10 +92,6 @@ private:
                 return "al";
             case Reg::RBX:
                 return "bl";
-            case Reg::RCX:
-                return "cl";
-            case Reg::RDX:
-                return "dl";
         }
 
         throw std::runtime_error("Unexpected register");
@@ -178,10 +168,10 @@ private:
         switch (expr.node_kind) {
             case NodeKind::AssignmentExpr:
             case NodeKind::PostfixExpr:
-            case NodeKind::FuncCallExpr:
+            case NodeKind::CallExpr:
                 return true;
 
-            case NodeKind::BinaryOperExpr:
+            case NodeKind::BinaryOperator:
                 return has_side_effects(*expr.children_nodes[0]) ||
                         has_side_effects(*expr.children_nodes[1]);
 
@@ -192,16 +182,16 @@ private:
 
     std::size_t compute_ershov(const Node& expr) const {
         switch (expr.node_kind) {
-            case NodeKind::IdentifierExpr:
-            case NodeKind::IntegerExpr:
+            case NodeKind::DeclRefExpr:
+            case NodeKind::IntegerLiteral:
             case NodeKind::PostfixExpr:
-            case NodeKind::FuncCallExpr:
+            case NodeKind::CallExpr:
                 return 1;
 
             case NodeKind::AssignmentExpr:
                 return compute_ershov(*expr.children_nodes[1]);
 
-            case NodeKind::BinaryOperExpr: {
+            case NodeKind::BinaryOperator: {
                 const std::size_t left =
                     compute_ershov(*expr.children_nodes[0]);
                 const std::size_t right =
@@ -220,15 +210,15 @@ private:
     }
 
     //-----------------Functions-----------------
-    void collect_program(const Program& program) {
+    void collect_program(const TranslationUnitDecl& program) {
         for (const auto& child : program.children_nodes) {
-            const auto* function_def = static_cast<FunctionDef*>(child.get());
+            const auto* function_def = static_cast<FunctionDecl*>(child.get());
             collect_function(*function_def);
 
         }
     }
 
-    void collect_function(const FunctionDef& function_def) {
+    void collect_function(const FunctionDecl& function_def) {
         const std::string& function_id = function_def.get_function_id();
         // Add new function declaration in the function table
         if(function_table_.find(function_id) == function_table_.end()) {
@@ -236,17 +226,17 @@ private:
             // Calculate number of arguments
             const auto* param_list =
                 static_cast<ParameterList*>(function_def.children_nodes[0].get());
-            collect_arg_list(*param_list, function_id);
+            collect_parameter_list(*param_list, function_id);
         }
         else {
             const std::string err_msg = "Multiple definitions of function "
                                         + function_def.get_function_id();
-            print_error(function_def, err_msg);
+            report_error(function_def, err_msg);
             throw std::runtime_error("Multiple definition!");
         }
     }
 
-    void collect_arg_list(const ParameterList& parameter_list,
+    void collect_parameter_list(const ParameterList& parameter_list,
                           const std::string& function_id) {
         const std::size_t param_count = parameter_list.children_nodes.size();
         function_table_[function_id].param_count = param_count;
@@ -302,7 +292,7 @@ private:
                 );
                 break;
 
-            case NodeKind::ExpressionStmt:
+            case NodeKind::ExprStmt:
                 if (!node.children_nodes.empty()) {
                     collect_expr_locals(*node.children_nodes[0], context);
                 }
@@ -349,7 +339,7 @@ private:
                 break;
 
             default:
-                print_error(node, "Unexpected statement node.");
+                report_error(node, "Unexpected statement node.");
                 throw std::runtime_error("Unexpected statement node");
         }
     }
@@ -394,12 +384,12 @@ private:
                 break;
             }
 
-            case NodeKind::BinaryOperExpr:
+            case NodeKind::BinaryOperator:
                 collect_expr_locals(*node.children_nodes[0], context);
                 collect_expr_locals(*node.children_nodes[1], context);
                 break;
 
-            case NodeKind::FuncCallExpr:
+            case NodeKind::CallExpr:
                 if (!node.children_nodes.empty()) {
                     for (const auto& child : node.children_nodes[0]->children_nodes) {
                         collect_expr_locals(*child, context);
@@ -407,17 +397,17 @@ private:
                 }
                 break;
 
-            case NodeKind::IdentifierExpr:
-            case NodeKind::IntegerExpr:
+            case NodeKind::DeclRefExpr:
+            case NodeKind::IntegerLiteral:
                 break;
 
             default:
-                print_error(node, "Unexpected expression node.");
+                report_error(node, "Unexpected expression node.");
                 throw std::runtime_error("Unexpected expression node");
         }
     }
 
-    void emit_program(const Program& program) {
+    void emit_program(const TranslationUnitDecl& program) {
         asm_file_ << "format ELF64 executable 3\n";
         asm_file_ << "entry _start\n" << "\n";
         asm_file_ << "_start:\n";
@@ -428,12 +418,12 @@ private:
         asm_file_ << "\n";
 
         for (const auto& child : program.children_nodes) {
-            const auto* function_def = static_cast<FunctionDef*>(child.get());
+            const auto* function_def = static_cast<FunctionDecl*>(child.get());
             emit_function(*function_def);
         }
     }
 
-    void emit_function(const FunctionDef& function_def) {
+    void emit_function(const FunctionDecl& function_def) {
         FunctionContext context;
         const std::string& function_label =
             function_table_.at(function_def.get_function_id()).function_label;
@@ -495,9 +485,9 @@ private:
                 );
                 break;
 
-            case NodeKind::ExpressionStmt:
+            case NodeKind::ExprStmt:
                 emit_expression_stmt(
-                    static_cast<const ExpressionStmt&>(node),
+                    static_cast<const ExprStmt&>(node),
                     context
                 );
                 break;
@@ -530,7 +520,7 @@ private:
                 break;
 
             default:
-                print_error(node, "Unexpected statement node.");
+                report_error(node, "Unexpected statement node.");
                 throw std::runtime_error("Unexpected statement node");
         }
     }
@@ -636,7 +626,7 @@ private:
 
     void emit_break_stmt(const BreakStmt& break_stmt, FunctionContext& context) {
         if (context.break_labels.empty()) {
-            print_error(break_stmt, "Unexpected 'break' outside loop.");
+            report_error(break_stmt, "Unexpected 'break' outside loop.");
             throw std::runtime_error("Unexpected break outside loop");
         }
 
@@ -646,7 +636,7 @@ private:
     void emit_continue_stmt(const ContinueStmt& continue_stmt, FunctionContext&
     context) {
         if (context.continue_labels.empty()) {
-            print_error(continue_stmt, "Unexpected 'continue' outside loop.");
+            report_error(continue_stmt, "Unexpected 'continue' outside loop.");
             throw std::runtime_error("Unexpected continue outside loop");
         }
 
@@ -654,7 +644,7 @@ private:
     }
 
     void emit_expression_stmt(
-        const ExpressionStmt& expression_stmt,
+        const ExprStmt& expression_stmt,
         FunctionContext& context
     ) {
         if (expression_stmt.children_nodes.empty()) {
@@ -683,40 +673,40 @@ private:
                 );
                 break;
 
-            case NodeKind::FuncCallExpr:
+            case NodeKind::CallExpr:
                 emit_func_call_expr_to_reg(
-                    static_cast<const FuncCallExpr&>(expression),
+                    static_cast<const CallExpr&>(expression),
                     target,
                     context
                 );
                 break;
 
-            case NodeKind::BinaryOperExpr:
+            case NodeKind::BinaryOperator:
                 emit_binary_expr_to_reg(
-                    static_cast<const BinaryOperExpr&>(expression),
+                    static_cast<const BinaryOperator&>(expression),
                     target,
                     context
                 );
                 break;
 
-            case NodeKind::IdentifierExpr:
+            case NodeKind::DeclRefExpr:
                 emit_identifier_expr_to_reg(
-                    static_cast<const IdentifierExpr&>(expression),
+                    static_cast<const DeclRefExpr&>(expression),
                     target,
                     context
                 );
                 break;
 
-            case NodeKind::IntegerExpr:
+            case NodeKind::IntegerLiteral:
                 emit_integer_expr_to_reg(
-                    static_cast<const IntegerExpr&>(expression),
+                    static_cast<const IntegerLiteral&>(expression),
                     target,
                     context
                 );
                 break;
 
             default:
-                print_error(expression, "Unexpected expression node.");
+                report_error(expression, "Unexpected expression node.");
                 throw std::runtime_error("Unexpected expression node");
         }
     }
@@ -727,13 +717,13 @@ private:
         FunctionContext& context
     ) {
         const auto* ident =
-            static_cast<const IdentifierExpr*>(assignment_expr.children_nodes[0].get());
+            static_cast<const DeclRefExpr*>(assignment_expr.children_nodes[0].get());
 
         const std::string& identifier = get_identifier_name(*ident);
         const auto* symbol_info = find_symbol(context, identifier);
 
         if (symbol_info == nullptr) {
-            print_error(assignment_expr, "Undefined identifier.");
+            report_error(assignment_expr, "Undefined identifier.");
             throw std::runtime_error("Undefined identifier.");
         }
 
@@ -760,7 +750,7 @@ private:
         const auto* symbol_info = find_symbol(context, identifier);
 
         if (symbol_info == nullptr) {
-            print_error(postfix_expr, "Undefined identifier.");
+            report_error(postfix_expr, "Undefined identifier.");
             throw std::runtime_error("Undefined identifier.");
         }
 
@@ -793,13 +783,13 @@ private:
             }
         }
         else {
-            print_error(postfix_expr, "Unsupported postfix operator.");
+            report_error(postfix_expr, "Unsupported postfix operator.");
             throw std::runtime_error("Unsupported postfix operator.");
         }
     }
 
     void emit_func_call_expr_to_reg(
-        const FuncCallExpr& func_call_expr,
+        const CallExpr& func_call_expr,
         Reg target,
         FunctionContext& context
     ) {
@@ -807,7 +797,7 @@ private:
         auto iter = function_table_.find(function_id);
 
         if (iter == function_table_.end()) {
-            print_error(func_call_expr, "Undefined function.");
+            report_error(func_call_expr, "Undefined function.");
             throw std::runtime_error("Undefined function");
         }
 
@@ -817,7 +807,7 @@ private:
         const std::size_t arg_count = arg_list->children_nodes.size();
 
         if (arg_count != iter->second.param_count) {
-            print_error(func_call_expr, "Invalid count of arguments.");
+            report_error(func_call_expr, "Invalid count of arguments.");
             throw std::runtime_error("Invalid count of arguments");
         }
 
@@ -840,7 +830,7 @@ private:
         }
     }
 
-    void emit_binary_expr_to_reg(const BinaryOperExpr& binary_expr,
+    void emit_binary_expr_to_reg(const BinaryOperator& binary_expr,
                             Reg target,
                             FunctionContext& context
     ) {
@@ -958,12 +948,12 @@ private:
             asm_file_ << "or " << target_reg << ", " << spare_reg << "\n";
         }
         else {
-            print_error(binary_expr, "Unsupported binary expression.");
+            report_error(binary_expr, "Unsupported binary expression.");
             throw std::runtime_error("Unsupported binary expression");
         }
     }
 
-    void emit_identifier_expr_to_reg(const IdentifierExpr& identifier_expr,
+    void emit_identifier_expr_to_reg(const DeclRefExpr& identifier_expr,
                                 Reg target,
                                 FunctionContext& context) {
         const std::string& identifier = get_identifier_name(identifier_expr);
@@ -981,12 +971,12 @@ private:
             }
         }
         else {
-            print_error(identifier_expr, "Undefined identifier.");
+            report_error(identifier_expr, "Undefined identifier.");
             throw std::runtime_error("Undefined identifier.");
         }
     }
 
-  void emit_integer_expr_to_reg(const IntegerExpr& integer_expr,
+  void emit_integer_expr_to_reg(const IntegerLiteral& integer_expr,
                          Reg target,
                          FunctionContext&) {
       const std::string& lexeme =

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include "cli-tabel.h"
+#include "cli-table.h"
 
 class Lexer {
 public:
@@ -38,8 +38,8 @@ public:
         TOKEN_LOGICAL_OR,
         TOKEN_NOT,
         // Punctuators
-        TOKEN_L_PARENTH,
-        TOKEN_R_PARENTH,
+        TOKEN_L_PAREN,
+        TOKEN_R_PAREN,
         TOKEN_L_BRACE,
         TOKEN_R_BRACE,
         TOKEN_L_BRACKET,
