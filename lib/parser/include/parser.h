@@ -476,7 +476,7 @@ private:
 
     void report_error(TokenIter token_iter, const std::string& error_msg) {
         if (token_list_.empty()) {
-            std::cout << "Error: " << error_msg << '\n';
+            std::cerr << "Error: " << error_msg << '\n';
             return;
         }
 
@@ -497,7 +497,7 @@ private:
 
             ++line_end_iter;
 
-        std::cout << "Error "
+        std::cerr << "Error "
                   << token_iter->line
                   << ":"
                   << token_iter->column
@@ -507,15 +507,15 @@ private:
 
         for (auto iter = line_start_iter; iter <= line_end_iter; ++iter) {
             if (iter != token_iter) {
-                std::cout << iter->lexeme;
+                std::cerr << iter->lexeme;
             } else {
-                std::cout << "\033[4;31m"
+                std::cerr << "\033[4;31m"
                           << token_iter->lexeme
                           << "\033[0m";
             }
         }
 
-        std::cout << '\n';
+        std::cerr << '\n';
     }
 
     //---------------------------------Helpers------------------------------

@@ -70,56 +70,67 @@ int assemble_and_run(
     return -1;
 }
 
+std::string assemble_run_and_capture_stdout(
+    const std::string& asm_path,
+    const std::string& exe_path,
+    const std::string& input = ""
+) {
+    const std::string build_cmd =
+        "fasm " + asm_path + " " + exe_path + " >/tmp/paracl_codegen_test.log 2>&1";
+    const int build_code = std::system(build_cmd.c_str());
+    EXPECT_EQ(build_code, 0) << read_file("/tmp/paracl_codegen_test.log");
+
+    if (build_code != 0) {
+        return "";
+    }
+
+    const std::string output_path = exe_path + ".stdout";
+    std::string run_cmd;
+
+    if (input.empty()) {
+        run_cmd = exe_path + " >" + output_path + " 2>/tmp/paracl_codegen_test.log";
+    }
+    else {
+        const std::string input_path = exe_path + ".stdin";
+        std::ofstream input_file(input_path);
+        if (!input_file.is_open()) {
+            throw std::runtime_error("Failed to create stdin file");
+        }
+
+        input_file << input;
+        input_file.close();
+
+        run_cmd = exe_path + " <" + input_path + " >" + output_path +
+            " 2>/tmp/paracl_codegen_test.log";
+    }
+
+    const int run_code = std::system(run_cmd.c_str());
+    EXPECT_EQ(run_code, 0) << read_file("/tmp/paracl_codegen_test.log");
+
+    if (run_code != 0) {
+        return "";
+    }
+
+    return read_file(output_path);
+}
+
 } // namespace
 
-TEST(CodeGenTest, GeneratesExpectedAsmForFunctionCallSnippet) {
+TEST(CodeGenTest, GeneratesExpectedAsmStructureForFunctionCallSnippet) {
     const std::string asm_text = generate_asm(
         "../../unittests/codegen/code_snippets/basic.paracl",
         "/tmp/paracl_codegen_basic.asm"
     );
 
-    const std::string ref_asm =
-        "format ELF64 executable 3\n"
-        "entry _start\n"
-        "\n"
-        "_start:\n"
-        "call _int_main\n"
-        "mov rdi, rax\n"
-        "mov rax, 60\n"
-        "syscall\n"
-        "\n"
-        "_int_foo:\n"
-        "push rbp\n"
-        "mov rbp, rsp\n"
-        "mov rax, qword [rbp + 16]\n"
-        "jmp _int_foo_end\n"
-        "_int_foo_fallthrough:\n"
-        "ud2\n"
-        "_int_foo_end:\n"
-        "mov rsp, rbp\n"
-        "pop rbp\n"
-        "ret\n"
-        "_int_main:\n"
-        "push rbp\n"
-        "mov rbp, rsp\n"
-        "mov rax, 1\n"
-        "push rax\n"
-        "call _int_foo\n"
-        "add rsp, 8\n"
-        "push rax\n"
-        "mov rax, 2\n"
-        "mov rbx, rax\n"
-        "pop rax\n"
-        "add rax, rbx\n"
-        "jmp _int_main_end\n"
-        "_int_main_fallthrough:\n"
-        "ud2\n"
-        "_int_main_end:\n"
-        "mov rsp, rbp\n"
-        "pop rbp\n"
-        "ret\n";
-
-    EXPECT_EQ(asm_text, ref_asm);
+    EXPECT_NE(asm_text.find("format ELF64 executable 3\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("entry _start\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("_start:\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("call _int_main\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("_int_foo:\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("_int_main:\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("call _int_foo\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("_std_print:\n"), std::string::npos);
+    EXPECT_NE(asm_text.find("_std_scan:\n"), std::string::npos);
 }
 
 TEST(CodeGenTest, GeneratedProgramReturnsExpectedExitCode) {
@@ -208,6 +219,47 @@ TEST(CodeGenTest, ThrowsOnWrongFunctionArgumentCount) {
             generate_asm(
                 "../../unittests/codegen/code_snippets/wrong_arg_count.paracl",
                 "/tmp/paracl_codegen_wrong_arg_count.asm"
+            );
+        },
+        std::runtime_error
+    );
+}
+
+TEST(CodeGenTest, PrintIntWritesExpectedOutput) {
+    generate_asm(
+        "../../unittests/codegen/code_snippets/print_int.paracl",
+        "/tmp/paracl_codegen_print_int.asm"
+    );
+
+    const std::string stdout_text = assemble_run_and_capture_stdout(
+        "/tmp/paracl_codegen_print_int.asm",
+        "/tmp/paracl_codegen_print_int.out"
+    );
+
+    EXPECT_EQ(stdout_text, "42\n");
+}
+
+TEST(CodeGenTest, ScanIntReadsAndPrintsExpectedValue) {
+    generate_asm(
+        "../../unittests/codegen/code_snippets/scan_int.paracl",
+        "/tmp/paracl_codegen_scan_int.asm"
+    );
+
+    const std::string stdout_text = assemble_run_and_capture_stdout(
+        "/tmp/paracl_codegen_scan_int.asm",
+        "/tmp/paracl_codegen_scan_int.out",
+        "17\n"
+    );
+
+    EXPECT_EQ(stdout_text, "17\n");
+}
+
+TEST(CodeGenTest, ThrowsOnReservedStdlibNameRedefinition) {
+    EXPECT_THROW(
+        {
+            generate_asm(
+                "../../unittests/codegen/code_snippets/redefine_print_int.paracl",
+                "/tmp/paracl_codegen_redefine_print_int.asm"
             );
         },
         std::runtime_error

@@ -1,0 +1,5 @@
+int main() {
+    a = scan();
+    print(a);
+    return 0;
+}
