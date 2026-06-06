@@ -110,7 +110,6 @@ private:
     void parse_identifier_or_keyword();
     void parse_operator_or_punctuator();
     void parse_number();
-    void parse_string();
     void parse_comment();
 
     // Helpers

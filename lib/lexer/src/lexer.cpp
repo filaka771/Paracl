@@ -136,9 +136,6 @@ void Lexer::parse_tokens() {
         else if (std::isdigit(static_cast<unsigned char>(code_text_[char_pos_]))) {
             parse_number();
         }
-        else if (code_text_[char_pos_] == '"') {
-            parse_string();
-        }
         else if (code_text_[char_pos_] == '/') {
             // Could be a comment or division operator
             if (code_text_[char_pos_ + 1] == '/' || code_text_[char_pos_ + 1] == '*')
@@ -335,44 +332,6 @@ void Lexer::parse_number() {
     std::string lexeme = code_text_.substr(start, char_pos_ - start);
     token_list_.push_back({TokenType::TOKEN_DECIMAL_INT, line_, column_, lexeme});
     column_ += static_cast<int>(lexeme.size());
-}
-
-void Lexer::parse_string() {
-    int start_line = line_;
-    int start_column = column_;
-
-    char_pos_++; // skip opening "
-    column_++;
-
-    std::size_t start = char_pos_;
-
-    while (code_text_[char_pos_] != '"' &&
-           code_text_[char_pos_] != '\0' &&
-           code_text_[char_pos_] != '\n') {
-        char_pos_++;
-        column_++;
-    }
-
-    std::string lexeme = code_text_.substr(start, char_pos_ - start);
-
-    if (code_text_[char_pos_] == '"') {
-        char_pos_++;
-        column_++;
-
-        token_list_.push_back({
-            TokenType::TOKEN_STRING,
-            start_line,
-            start_column,
-            lexeme
-        });
-    } else {
-        report_error(
-            start_line,
-            start_column,
-            "Unterminated string literal",
-            lexeme
-        );
-    }
 }
 
 void Lexer::parse_comment() {
