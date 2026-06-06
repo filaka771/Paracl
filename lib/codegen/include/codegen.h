@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <vector>
+#include <filesystem>
 
 #include "../../parser/include/parser.h"
 
@@ -52,6 +53,7 @@ private:
     };
 
     void generate() {
+        register_stdlib_functions();
         collect_program(*parse_result_.program);
         emit_program(*parse_result_.program);
     }
@@ -107,6 +109,34 @@ private:
 
     void restore_reg(Reg reg) {
         asm_file_ << "pop " << reg_name(reg) << "\n";
+    }
+
+    bool is_reserved_stdlib_name(const std::string& function_id) const {
+        return function_id == "print" || function_id == "scan";
+    }
+
+    void register_stdlib_functions() {
+        function_table_["print"] = FunctionInfo{1, "_std_print"};
+        function_table_["scan"] = FunctionInfo{0, "_std_scan"};
+    }
+
+    std::filesystem::path stdlib_runtime_path() const {
+        return std::filesystem::path(__FILE__)
+            .parent_path()
+            .parent_path()
+            .parent_path()
+            .parent_path()
+            / "stdlib"
+            / "runtime.asm";
+    }
+
+    void emit_stdlib_runtime() {
+        std::ifstream runtime_file(stdlib_runtime_path());
+        if (!runtime_file.is_open()) {
+            throw std::runtime_error("Failed to open stdlib runtime.asm");
+        }
+
+        asm_file_ << runtime_file.rdbuf();
     }
 
     void push_scope(FunctionContext& context) {
@@ -229,10 +259,11 @@ private:
             collect_parameter_list(*param_list, function_id);
         }
         else {
-            const std::string err_msg = "Multiple definitions of function "
-                                        + function_def.get_function_id();
+            const std::string err_msg = is_reserved_stdlib_name(function_id)
+                ? "Reserved standard library function name: " + function_id
+                : "Multiple definitions of function " + function_id;
             report_error(function_def, err_msg);
-            throw std::runtime_error("Multiple definition!");
+            throw std::runtime_error(err_msg);
         }
     }
 
@@ -409,7 +440,9 @@ private:
 
     void emit_program(const TranslationUnitDecl& program) {
         asm_file_ << "format ELF64 executable 3\n";
-        asm_file_ << "entry _start\n" << "\n";
+        asm_file_ << "entry _start\n";
+        asm_file_ << "\n";
+        asm_file_ << "segment readable executable\n";
         asm_file_ << "_start:\n";
         asm_file_ << "call _int_main\n";
         asm_file_ << "mov rdi, rax\n";
@@ -421,6 +454,8 @@ private:
             const auto* function_def = static_cast<FunctionDecl*>(child.get());
             emit_function(*function_def);
         }
+
+        emit_stdlib_runtime();
     }
 
     void emit_function(const FunctionDecl& function_def) {
