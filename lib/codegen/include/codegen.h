@@ -58,57 +58,23 @@ private:
         emit_program(*parse_result_.program);
     }
 
-    //-----------------Helpers-----------------
+    // ------------------Helpers------------------
     void report_error(const Node& node, std::string error_msg) const {
         std::cout << error_msg;
         const auto line = parse_result_.token_list[node.span_.begin].line;
         const auto column = parse_result_.token_list[node.span_.begin].column; 
-        std::cout << " " << line << ":" << column << "\n";
+        std::cerr << " " << line << ":" << column << "\n";
     }
 
     const std::string& get_identifier_name(const Node& node) const {
         switch (node.node_kind) {
-            case NodeKind::DeclRefExpr:
+            case NodeKind::IdentifierExpr:
                 return parse_result_.token_list[node.span_.begin].lexeme;
 
             default:
                 report_error(node, "Node does not contain identifier.");
                 throw std::runtime_error("Node does not contain identifier");
         }
-    }
-
-    const char* reg_name(Reg reg) const {
-        switch (reg) {
-            case Reg::RAX:
-                return "rax";
-            case Reg::RBX:
-                return "rbx";
-        }
-
-        throw std::runtime_error("Unexpected register");
-    }
-
-    const char* reg_byte_name(Reg reg) const {
-        switch (reg) {
-            case Reg::RAX:
-                return "al";
-            case Reg::RBX:
-                return "bl";
-        }
-
-        throw std::runtime_error("Unexpected register");
-    }
-
-    Reg other_reg(Reg reg) const {
-        return reg == Reg::RAX ? Reg::RBX : Reg::RAX;
-    }
-
-    void spill_reg(Reg reg) {
-        asm_file_ << "push " << reg_name(reg) << "\n";
-    }
-
-    void restore_reg(Reg reg) {
-        asm_file_ << "pop " << reg_name(reg) << "\n";
     }
 
     bool is_reserved_stdlib_name(const std::string& function_id) const {
@@ -165,23 +131,6 @@ private:
         return nullptr;
     }
 
-    const SymbolInfo* find_symbol(
-        const FunctionContext& context,
-        const std::string& identifier
-    ) const {
-        for (auto iter = context.scopes.rbegin();
-             iter != context.scopes.rend();
-             ++iter)
-        {
-            auto symbol_iter = iter->symbol_table.find(identifier);
-            if (symbol_iter != iter->symbol_table.end()) {
-                return &symbol_iter->second;
-            }
-        }
-
-        return nullptr;
-    }
-
     void add_symbol_to_current_scope(
         FunctionContext& context,
         const std::string& identifier,
@@ -193,7 +142,57 @@ private:
 
         context.scopes.back().symbol_table[identifier] = symbol_info;
     }
-    //-----------------Ershov_number-----------------
+
+    // ---------- Expression register strategy ----------
+    // Expression lowering uses two general-purpose registers:
+    //
+    // - rax: primary result register
+    // - rbx: secondary scratch register
+    //
+    // Subexpressions are evaluated into rax when possible. When both sides of a
+    // binary expression must stay live at once, one value may be spilled to the
+    // stack with push/pop and restored later.
+    //
+    // Ershov numbers are used only to choose a better evaluation order for binary
+    // expressions.
+    // 
+    // ---------- Register helpers ----------
+    // Translate the internal Reg enum to assembly register names and provide the
+    // spill/restore helpers used by expression emission.
+    const char* reg_name(Reg reg) const {
+        switch (reg) {
+            case Reg::RAX:
+                return "rax";
+            case Reg::RBX:
+                return "rbx";
+        }
+
+        throw std::runtime_error("Unexpected register");
+    }
+
+    const char* reg_byte_name(Reg reg) const {
+        switch (reg) {
+            case Reg::RAX:
+                return "al";
+            case Reg::RBX:
+                return "bl";
+        }
+
+        throw std::runtime_error("Unexpected register");
+    }
+
+    Reg other_reg(Reg reg) const {
+        return reg == Reg::RAX ? Reg::RBX : Reg::RAX;
+    }
+
+    void spill_reg(Reg reg) {
+        asm_file_ << "push " << reg_name(reg) << "\n";
+    }
+
+    void restore_reg(Reg reg) {
+        asm_file_ << "pop " << reg_name(reg) << "\n";
+    }
+
     bool has_side_effects(const Node& expr) const {
         switch (expr.node_kind) {
             case NodeKind::AssignmentExpr:
@@ -212,7 +211,7 @@ private:
 
     std::size_t compute_ershov(const Node& expr) const {
         switch (expr.node_kind) {
-            case NodeKind::DeclRefExpr:
+            case NodeKind::IdentifierExpr:
             case NodeKind::IntegerLiteral:
             case NodeKind::PostfixExpr:
             case NodeKind::CallExpr:
@@ -239,7 +238,19 @@ private:
         }
     }
 
-    //-----------------Functions-----------------
+    // ---------- Collection pass ----------
+    // Before emitting assembly, codegen walks the AST to collect metadata needed
+    // for later emission.
+    //
+    // This pass records:
+    // - function arity and generated labels in function_table_
+    // - parameters in the current function scope
+    // - implicitly created local variables discovered through expressions
+    // - total stack space needed for locals in FunctionContext::next_offset
+    //
+    // Scope handling here is only for name lookup and shadowing. Stack slots are
+    // not reused when a nested scope ends; each discovered local gets a unique
+    // offset for the whole function frame.
     void collect_program(const TranslationUnitDecl& program) {
         for (const auto& child : program.children_nodes) {
             const auto* function_def = static_cast<FunctionDecl*>(child.get());
@@ -250,7 +261,7 @@ private:
 
     void collect_function(const FunctionDecl& function_def) {
         const std::string& function_id = function_def.get_function_id();
-        // Add new function declaration in the function table
+        // Add new function definition in the function table
         if(function_table_.find(function_id) == function_table_.end()) {
             function_table_[function_id].function_label = "_int_" + function_id;
             // Calculate number of arguments
@@ -273,6 +284,25 @@ private:
         function_table_[function_id].param_count = param_count;
     }
 
+    // ---------- Internal function-call ABI ----------
+    // User-defined functions use a simple stack-based calling convention.
+    //
+    // Call site:
+    // - evaluate arguments right-to-left
+    // - push each argument on the stack
+    // - call the function label
+    // - remove pushed arguments after the call
+    //
+    // Callee:
+    // - uses the standard rbp-based frame prologue
+    // - reads the first argument at [rbp + 16], then [rbp + 24], ...
+    // - stores locals below rbp at [rbp - offset]
+    //
+    // Return value:
+    // - produced in rax
+    //
+    // The emitted _start stub exits the process using _int_main's return
+    // value as the Linux exit status.
     void collect_parameters(
         const ParameterList& parameter_list,
         FunctionContext& context
@@ -428,7 +458,7 @@ private:
                 }
                 break;
 
-            case NodeKind::DeclRefExpr:
+            case NodeKind::IdentifierExpr:
             case NodeKind::IntegerLiteral:
                 break;
 
@@ -439,6 +469,7 @@ private:
     }
 
     void emit_program(const TranslationUnitDecl& program) {
+        // Emit ELF64 header
         asm_file_ << "format ELF64 executable 3\n";
         asm_file_ << "entry _start\n";
         asm_file_ << "\n";
@@ -724,9 +755,9 @@ private:
                 );
                 break;
 
-            case NodeKind::DeclRefExpr:
+            case NodeKind::IdentifierExpr:
                 emit_identifier_expr_to_reg(
-                    static_cast<const DeclRefExpr&>(expression),
+                    static_cast<const IdentifierExpr&>(expression),
                     target,
                     context
                 );
@@ -752,7 +783,7 @@ private:
         FunctionContext& context
     ) {
         const auto* ident =
-            static_cast<const DeclRefExpr*>(assignment_expr.children_nodes[0].get());
+            static_cast<const IdentifierExpr*>(assignment_expr.children_nodes[0].get());
 
         const std::string& identifier = get_identifier_name(*ident);
         const auto* symbol_info = find_symbol(context, identifier);
@@ -988,7 +1019,7 @@ private:
         }
     }
 
-    void emit_identifier_expr_to_reg(const DeclRefExpr& identifier_expr,
+    void emit_identifier_expr_to_reg(const IdentifierExpr& identifier_expr,
                                 Reg target,
                                 FunctionContext& context) {
         const std::string& identifier = get_identifier_name(identifier_expr);

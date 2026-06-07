@@ -11,7 +11,6 @@
 
 #include "lexer.h"
 
-//----------------Base Node----------------
 struct SourceSpan {
     std::size_t begin;
     std::size_t end;
@@ -30,7 +29,7 @@ enum class NodeKind {
     ReturnStmt,
     BreakStmt,
     ContinueStmt,
-    DeclRefExpr,
+    IdentifierExpr,
     IntegerLiteral,
     PostfixExpr,
     CallExpr,
@@ -39,6 +38,7 @@ enum class NodeKind {
     AssignmentExpr
 };
 
+//   --------------Base Node--------------
 class Node {
 public:
     using TokenList = std::vector<Lexer::Token>;
@@ -75,7 +75,9 @@ public:
     }
 };
 
-//----------------TranslationUnitDecl----------------
+//----------------AST_Nodes_Classes----------------
+//
+//  --------------Translation_unit----------------
 class TranslationUnitDecl : public Node {
 public:
     TranslationUnitDecl(std::string node_name, SourceSpan span)
@@ -87,7 +89,7 @@ public:
     }
 };
 
-//----------------Functions----------------
+//  --------------Functions--------------
 class FunctionDecl : public Node {
 public:
     FunctionDecl(
@@ -151,7 +153,7 @@ private:
 };
 
 
-//----------------Statements----------------
+//   --------------Statements--------------
 class CompoundStmt : public Node {
 public:
     CompoundStmt(
@@ -279,11 +281,11 @@ public:
 
 };
 
-//----------------Expressions----------------
-class DeclRefExpr : public Node {
+//  --------------Expressions--------------
+class IdentifierExpr : public Node {
 public:
-    DeclRefExpr(SourceSpan span, std::string ident_name)
-    : Node("DeclRefExpr", NodeKind::DeclRefExpr, nullptr, {}, span),
+    IdentifierExpr(SourceSpan span, std::string ident_name)
+    : Node("IdentifierExpr", NodeKind::IdentifierExpr, nullptr, {}, span),
       ident_name_(std::move(ident_name))
     {}
 
@@ -390,7 +392,9 @@ public:
 private:
     std::string assign_lexeme_;
 };
-//----------------Parser----------------
+
+//--------------------Parser--------------------
+
 class Parser {
 public:
     using TokenList = std::vector<Lexer::Token>;
@@ -428,17 +432,23 @@ private:
     TokenList token_list_;
     std::unique_ptr<TranslationUnitDecl> program_;
 
+    //   --------------Helpers--------------
+    // Convert a token iterator into index in token_list_
     std::size_t to_index(TokenIter token_iter) {
         return static_cast<std::size_t>(
             std::distance(token_list_.begin(), token_iter)
         );
     }
 
+    // Build a single-token span, where begin and end
+    // point to the same token
     SourceSpan make_span(TokenIter token_iter) {
         const auto index = to_index(token_iter);
         return SourceSpan{index, index};
     }
 
+    // Build span from the first token in the  
+    // range to the last one
     SourceSpan make_span(
         const std::tuple<TokenIter, TokenIter>& token_range
     ) {
@@ -448,6 +458,8 @@ private:
         };
     }
 
+
+    //  --------------AST_visualization--------------
     void print_ast(
         Node& node,
         const std::string& prefix,
@@ -474,6 +486,7 @@ private:
         }
     }
 
+    //  --------------Parsing_error_printing_helper--------------
     void report_error(TokenIter token_iter, const std::string& error_msg) {
         if (token_list_.empty()) {
             std::cerr << "Error: " << error_msg << '\n';
@@ -518,7 +531,18 @@ private:
         std::cerr << '\n';
     }
 
-    //---------------------------------Helpers------------------------------
+    void expect_token(
+        TokenIter token_iter,
+        Lexer::TokenType expected_type,
+        const std::string& error_msg
+    ) {
+        if (token_iter == token_list_.end() || token_iter->type != expected_type) {
+            report_error(token_iter, error_msg);
+            throw std::runtime_error(error_msg);
+        }
+    }
+
+    //  --------------Parsing_helper--------------
     std::tuple<TokenIter, TokenIter> find_brackets_pair(
         TokenIter token_iter,
         Lexer::TokenType open_type,
@@ -564,7 +588,7 @@ private:
         return brackets_pair;
     }
 
-    //---------------------------------Parsers------------------------------
+    //---------------------------Parsing_methods------------------------
     std::unique_ptr<TranslationUnitDecl> parse_program() {
         auto program_span = token_list_.empty()
             ? SourceSpan{0, 0}
@@ -581,14 +605,15 @@ private:
         return program;
     }
 
+
+    //  --------------Function_parsers--------------
     std::unique_ptr<FunctionDecl> parse_function(TokenIter& token_iter) {
         TokenIter func_name_iter;
 
         std::tuple<TokenIter, TokenIter> param_list_iter;
         std::tuple<TokenIter, TokenIter> compound_stmt_iter;
 
-        // Function type and name parsing.
-        // Currently only int functions are supported.
+        // Parse the leading 'int <ident>' function header
         if ((token_iter + 1) < token_list_.end() &&
             token_iter->type == Lexer::TokenType::TOKEN_INT &&
             (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
@@ -605,7 +630,7 @@ private:
             throw std::runtime_error("Invalid function declaration");
         }
 
-        // ParmVarDecl list parsing.
+        // Parse parameter list
         param_list_iter = find_brackets_pair(
             token_iter,
             Lexer::TokenType::TOKEN_L_PAREN,
@@ -626,6 +651,7 @@ private:
             throw std::runtime_error("Invalid function declaration");
         }
 
+        // Parse compound statement 
         compound_stmt_iter = find_brackets_pair(
             token_iter,
             Lexer::TokenType::TOKEN_L_BRACE,
@@ -637,6 +663,7 @@ private:
         token_iter = std::get<1>(compound_stmt_iter);
         ++token_iter;
 
+        // Generate AST function node
         auto function_node = std::make_unique<FunctionDecl>(
             "FunctionDecl",
             nullptr,
@@ -660,65 +687,59 @@ private:
     std::unique_ptr<ParameterList> parse_parameters_list(
         std::tuple<TokenIter, TokenIter> param_list
     ) {
+        // Generate AST parameter list node
         auto parameter_list = std::make_unique<ParameterList>(
             nullptr,
             make_span(param_list)
         );
 
-        auto token_iter = std::get<0>(param_list) + 1;
+        auto current_iter = std::get<0>(param_list) + 1;
         auto end_iter = std::get<1>(param_list);
 
-        while (token_iter < end_iter) {
-            if ((token_iter + 1) < end_iter &&
-                token_iter->type == Lexer::TokenType::TOKEN_INT &&
-                (token_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
+        // Collect list of function parameters
+        while (current_iter < end_iter) {
+            if ((current_iter + 1) < end_iter &&
+                current_iter->type == Lexer::TokenType::TOKEN_INT &&
+                (current_iter + 1)->type == Lexer::TokenType::TOKEN_IDENT)
             {
                 parameter_list->add_child(
                     std::make_unique<ParmVarDecl>(
-                        SourceSpan{to_index(token_iter), to_index(token_iter + 1)},
-                        token_iter->lexeme,
-                        (token_iter + 1)->lexeme
+                        SourceSpan{to_index(current_iter), to_index(current_iter + 1)},
+                        current_iter->lexeme,
+                        (current_iter + 1)->lexeme
                     )
                 );
 
-                token_iter += 2;
+                current_iter += 2;
             }
             else {
-                report_error(token_iter, "Invalid parameter.");
+                report_error(current_iter, "Invalid parameter.");
                 throw std::runtime_error("Invalid parameter");
             }
 
-            if (token_iter == end_iter) {
+            if (current_iter == end_iter) {
                 break;
             }
 
-            if (token_iter->type != Lexer::TokenType::TOKEN_COMMA) {
-                report_error(token_iter, "Expected ',' between parameters.");
+            if (current_iter->type != Lexer::TokenType::TOKEN_COMMA) {
+                report_error(current_iter, "Expected ',' between parameters.");
                 throw std::runtime_error("Expected comma between parameters");
             }
 
-            ++token_iter;
+            ++current_iter;
 
-            if (token_iter == end_iter) {
-                report_error(std::prev(token_iter), "Expected parameter after ','.");
+            if (current_iter == end_iter) {
+                report_error(std::prev(current_iter), "Expected parameter after ','.");
                 throw std::runtime_error("Expected parameter after comma");
             }
         }
 
         return parameter_list;
     }
-    // STATEMENTS
-    void expect_token(
-        TokenIter token_iter,
-        Lexer::TokenType expected_type,
-        const std::string& error_msg
-    ) {
-        if (token_iter == token_list_.end() || token_iter->type != expected_type) {
-            report_error(token_iter, error_msg);
-            throw std::runtime_error(error_msg);
-        }
-    }
 
+    //  --------------Statements_parsers--------------
+
+    //  Helper for finding top-level semicolon
     TokenIter find_top_level_semicolon(TokenIter begin, TokenIter end_iter) {
         int paren_depth = 0;
         int bracket_depth = 0;
@@ -754,6 +775,8 @@ private:
             throw std::runtime_error("Expected statement");
         }
 
+        // Distinguish type of statement and 
+        // call appropriate parser
         switch (token_iter->type) {
             case Lexer::TokenType::TOKEN_L_BRACE:
                 return parse_compound_statement(token_iter);
@@ -794,21 +817,24 @@ private:
             "Expected matching '}' for compound statement."
         );
 
+
+        // Generate AST compound statement node
         auto compound_node = std::make_unique<CompoundStmt>(
             nullptr,
             make_span(compound_range)
         );
 
-        auto stmt_iter = std::get<0>(compound_range) + 1;
-        auto compound_end = std::get<1>(compound_range);
+        auto current_iter = std::get<0>(compound_range) + 1;
+        auto end_iter     = std::get<1>(compound_range);
 
-        while (stmt_iter < compound_end) {
+        // Parse statements inside of the compound statement
+        while (current_iter < end_iter) {
             compound_node->add_child(
-                parse_statement(stmt_iter, compound_end)
+                parse_statement(current_iter, end_iter)
             );
         }
 
-        token_iter = compound_end + 1;
+        token_iter = end_iter + 1;
 
         return compound_node;
     }
@@ -817,8 +843,7 @@ private:
         TokenIter& token_iter,
         TokenIter end_iter
     ) {
-        auto stmt_begin = token_iter;
-
+        auto current_iter = token_iter;
         auto semicolon_iter = find_top_level_semicolon(token_iter, end_iter);
 
         if (semicolon_iter == end_iter) {
@@ -826,11 +851,12 @@ private:
             throw std::runtime_error("Expected semicolon after expression");
         }
 
-        auto stmt_range = std::make_tuple(stmt_begin, semicolon_iter);
-        auto expr_range = std::make_tuple(stmt_begin, semicolon_iter - 1);
+        auto stmt_range = std::make_tuple(current_iter, semicolon_iter);
+        auto expr_range = std::make_tuple(current_iter, semicolon_iter - 1);
 
         auto expr_stmt = std::make_unique<ExprStmt>(make_span(stmt_range));
 
+        // Generate AST expression statement
         expr_stmt->add_child(
             parse_expr(expr_range)
         );
@@ -841,7 +867,7 @@ private:
     }
 
     std::unique_ptr<Node> parse_null_statement(TokenIter& token_iter) {
-        auto stmt_begin = token_iter;
+        auto current_iter = token_iter;
 
         expect_token(
             token_iter,
@@ -849,7 +875,7 @@ private:
             "Expected ';'."
         );
 
-        auto stmt_range = std::make_tuple(stmt_begin, token_iter);
+        auto stmt_range = std::make_tuple(current_iter, token_iter);
 
         ++token_iter;
 
@@ -870,6 +896,7 @@ private:
 
         ++token_iter;
 
+        // Parse the parenthesized if-condition
         auto condition_full_range = find_brackets_pair(
             token_iter,
             Lexer::TokenType::TOKEN_L_PAREN,
@@ -896,8 +923,10 @@ private:
             throw std::runtime_error("Expected if body");
         }
 
+
         auto then_stmt = parse_statement(token_iter, end_iter);
 
+        // Investigate is else statement goes after if statement
         bool has_else = false;
         std::unique_ptr<Node> else_stmt = nullptr;
 
@@ -917,6 +946,7 @@ private:
 
         auto stmt_end = token_iter - 1;
 
+        // Generate AST if statement
         auto if_node = std::make_unique<IfStmt>(
             SourceSpan{to_index(stmt_begin), to_index(stmt_end)},
             has_else
@@ -946,6 +976,7 @@ private:
 
         ++token_iter;
 
+        // Distinguish loop header
         auto header_full_range = find_brackets_pair(
             token_iter,
             Lexer::TokenType::TOKEN_L_PAREN,
@@ -998,6 +1029,7 @@ private:
             throw std::runtime_error("Invalid for header");
         }
 
+        // Parse loop header
         bool has_init = header_begin < first_semicolon;
         bool has_cond = first_semicolon + 1 < second_semicolon;
         bool has_step = second_semicolon + 1 <= header_end;
@@ -1014,6 +1046,8 @@ private:
             ? std::make_tuple(second_semicolon + 1, header_end)
             : std::make_tuple(std::get<1>(header_full_range), std::get<1>(header_full_range));
 
+
+        // Parser for header
         std::unique_ptr<Node> init_node = nullptr;
         std::unique_ptr<Node> cond_node = nullptr;
         std::unique_ptr<Node> step_node = nullptr;
@@ -1048,6 +1082,7 @@ private:
             has_step
         );
 
+        // Generate AST for header
         if (has_init) {
             for_node->add_child(std::move(init_node));
         }
@@ -1060,6 +1095,7 @@ private:
             for_node->add_child(std::move(step_node));
         }
 
+        // Generate AST for statement
         for_node->add_child(std::move(body_stmt));
 
         return for_node;
@@ -1092,6 +1128,7 @@ private:
             ? std::make_tuple(token_iter, semicolon_iter - 1)
             : std::make_tuple(semicolon_iter, semicolon_iter);
 
+        // Generate AST return statement
         auto return_node = std::make_unique<ReturnStmt>(
             SourceSpan{to_index(stmt_begin), to_index(semicolon_iter)},
             has_expr
@@ -1133,6 +1170,7 @@ private:
 
         ++token_iter;
 
+        // Generate AST break statement
         return std::make_unique<BreakStmt>(make_span(stmt_range));
     }
 
@@ -1161,19 +1199,22 @@ private:
 
         ++token_iter;
 
+        // Generate AST continue statement
         return std::make_unique<ContinueStmt>(make_span(stmt_range));
     }
 
-    // EXPRASSIONS
+    //  --------------Expressions_parsers--------------
 
+    // Helper for distinguishing postfix operators
     bool is_postfix_operator(TokenIter iter) {
         return iter->type == Lexer::TokenType::TOKEN_INC ||
             iter->type == Lexer::TokenType::TOKEN_DEC;
     }
     
+    // Parse a single-token primary expression
     std::unique_ptr<Node> parse_primary_expr(TokenIter primary_iter) {
         if (primary_iter->type == Lexer::TokenType::TOKEN_IDENT) {
-            return std::make_unique<DeclRefExpr>(
+            return std::make_unique<IdentifierExpr>(
                 make_span(primary_iter),
                 primary_iter->lexeme
             );
@@ -1190,6 +1231,7 @@ private:
         throw std::runtime_error("Expected primary expression");
     }
 
+    // Parse a single-token primary-expression range.
     std::unique_ptr<Node> parse_primary_expr(ExprRange expr) {
         auto begin = std::get<0>(expr);
         auto end   = std::get<1>(expr);
@@ -1270,7 +1312,7 @@ private:
             throw std::runtime_error("Expected postfix expression");
         }
 
-        // x++ / x--
+        // Parse expressions like x++ / x--
         if (begin < end && is_postfix_operator(end)) {
             auto postfix_node = std::make_unique<PostfixExpr>(
                 make_span(expr),
@@ -1284,7 +1326,7 @@ private:
             return postfix_node;
         }
 
-        // foo() / foo(a, b)
+        // Parse functions calls foo() / foo(a, b)
         if (begin->type == Lexer::TokenType::TOKEN_IDENT &&
             begin + 1 <= end &&
             (begin + 1)->type == Lexer::TokenType::TOKEN_L_PAREN &&
@@ -1305,6 +1347,7 @@ private:
         return parse_primary_expr(expr);
     }
 
+    // Helper for parsing binary expressions
     TokenIter find_binary_operator(
         ExprRange expr,
         const std::vector<Lexer::TokenType>& operators
